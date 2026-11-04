@@ -46,16 +46,18 @@ function iconCard(cls, href, icon, title, sub, extra = "") {
   return `<a class="card ${cls}" href="${href}"><div class="lead"><span class="ic">${icon}</span></div>${I.curve}<div class="txt"><h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>${extra}</div><span class="go" aria-hidden="true">${I.arrow}</span></a>`;
 }
 function albumCard(a, i) {
-  const img = a.coverThumb ? `<img src="${esc(a.coverThumb)}" alt="" loading="lazy">` : "";
-  return `<a class="card sm c${(i % 6) + 1}" href="#/${a.group}/${encodeURIComponent(a.id)}"><div class="lead"><div class="slot${img ? " has-img" : ""}" aria-hidden="true">${img}</div></div>${I.curve}<div class="txt"><h2>${esc(a.title)}</h2><span class="sub">${esc(a.subtitle)}</span></div><span class="go" aria-hidden="true">${I.arrow}</span></a>`;
+  const icon = a.group === "penteados" ? I.hair : I.brush;
+  const media = a.coverThumb
+    ? `<div class="slot has-img" aria-hidden="true"><img src="${esc(a.coverThumb)}" alt="" loading="lazy"></div>`
+    : `<span class="ic">${icon}</span>`;
+  return `<a class="card sm c${(i % 6) + 1}" href="#/${a.group}/${encodeURIComponent(a.id)}"><div class="lead">${media}</div>${I.curve}<div class="txt"><h2>${esc(a.title)}</h2><span class="sub">${esc(a.subtitle)}</span></div><span class="go" aria-hidden="true">${I.arrow}</span></a>`;
 }
 
 /* ---------------- páginas ---------------- */
 function pageHome() {
   const c = S.content;
-  const about = S.media.about
-    ? `<div class="slot has-img"><img src="${esc(S.media.about)}" alt="${esc(c.aboutSignature)}"></div>`
-    : `<div class="slot" aria-label="Espaço para foto"></div>`;
+  const aboutSrc = S.media.about || "imagens/capa.jpg";
+  const about = `<div class="slot has-img"><img src="${esc(aboutSrc)}" alt="${esc(c.aboutSignature)}"></div>`;
   const cursos = c.showCursos !== false
     ? iconCard("c5", "#/cursos", I.cap, "Cursos", c.cardCursos, c.cursosSoon ? '<span class="soon">EM BREVE</span>' : "") : "";
   return `
@@ -63,6 +65,7 @@ function pageHome() {
     <h2>${esc(c.aboutTitle)}</h2><div class="line"></div>
     <div class="about">${about}<div>${paras(c.aboutText)}<b>${esc(c.aboutSignature)}</b></div></div>
   </section>
+  <div class="sec-head"><span>Explore</span><h2>Serviços & Portfólio</h2></div>
   <nav class="links" aria-label="Páginas">
     ${iconCard("c1", "#/agendamentos", I.cal, "Agendamentos", c.cardAgendamentos)}
     ${iconCard("c2", "#/maquiagem", I.brush, "Maquiagem", c.cardMaquiagem)}
@@ -245,6 +248,8 @@ function applyChrome() {
   $("#social").innerHTML =
     (igHandle() ? `<a href="${igUrl()}" target="_blank" rel="noopener" aria-label="Instagram @${esc(igHandle())}">${I.ig}<span>@${esc(igHandle())}</span></a>` : "") +
     (waNumber(c.whatsapp) ? `<a href="${wa()}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.whatsapp)}">${I.wa}<span>${esc(c.whatsapp)}</span></a>` : "");
+  const navCursos = $("#navCursos");
+  if (navCursos) navCursos.hidden = c.showCursos === false;
   $("#year").textContent = new Date().getFullYear();
 }
 
@@ -266,6 +271,9 @@ function route() {
   if (!html) { if (key) { location.replace("#/"); return; } html = pageHome(); }
 
   shell.classList.toggle("is-home", !a);
+  document.querySelectorAll("#deskMenu a[data-nav]").forEach(link => {
+    link.classList.toggle("active", link.dataset.nav === (a || ""));
+  });
   view.innerHTML = `<div class="page enter">${html}</div>`;
   document.title = title ? `${title} | ${NAME}` : NAME;
   window.scrollTo(0, 0);
