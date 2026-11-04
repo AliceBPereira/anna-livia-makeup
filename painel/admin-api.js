@@ -1,6 +1,7 @@
 /* Camada de dados do painel.
+   - Modo Cloud (padrão na Vercel): sincronizado em todos os dispositivos via /api/store + Vercel Blob.
    - Modo Firebase: Firebase Auth + Firestore (+ Storage opcional).
-   - Modo demonstração: tudo salvo no IndexedDB deste navegador. */
+   - Fallback local (IndexedDB) caso aberto localmente sem servidor. */
 import { firebaseConfig, IMAGE_STORAGE, FIREBASE_SDK, MODE } from "../js/config.js";
 import { DEFAULT_CONTENT, DEFAULT_ALBUMS } from "../js/defaults.js";
 import { kvGet, kvSet, kvDel } from "../js/idb.js";
@@ -25,14 +26,167 @@ export function errMsg(e) {
     "auth/missing-password": "Digite a senha.",
     "auth/network-request-failed": "Sem conexão com a internet. Verifique e tente de novo.",
     "auth/requires-recent-login": "Por segurança, saia e entre de novo antes de fazer isso.",
-    "auth/operation-not-allowed": "O login por e-mail e senha não está ativado no Firebase (veja o LEIA-ME).",
+    "auth/operation-not-allowed": "O login por e-mail e senha não está ativado.",
     "permission-denied": "Você não tem permissão para fazer isso.",
     "unavailable": "Sem conexão com o servidor. Verifique a internet."
   };
   for (const k in map) if (c.includes(k)) return map[k];
-  return (e && e.friendly) || "Algo deu errado. Tente novamente." + (c ? ` (${c})` : "");
+  return (e && e.friendly) || (e && e.message) || "Algo deu errado. Tente novamente.";
 }
-const fail = (code) => { const e = new Error(code); e.code = code; return e; };
+const fail = (code, friendly) => { const e = new Error(code); e.code = code; if (friendly) e.friendly = friendly; return e; };
+
+/* =================================================================
+   CLOUD (Vercel Blob via /api/store — funciona em todos os aparelhos)
+   ================================================================= */
+function cloudImpl() {
+  const TOK_KEY = "alm-cloud-token";
+  let listeners = [], current = null, setupDone = true;
+  const emit = (u, r) => listeners.forEach(f => f(u, r));
+  const getTok = () => localStorage.getItem(TOK_KEY) || "";
+  const setTok = t => t ? localStorage.setItem(TOK_KEY, t) : localStorage.removeItem(TOK_KEY);
+
+  async function call(action, payload = {}) {
+    const r = await fetch("/api/store", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(getTok() ? { Authorization: "Bearer " + getTok() } : {})
+      },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw fail(j.error || "server-error", j.message);
+    return j;
+  }
+
+  async function fetchState() {
+    const r = await fetch(`/api/store?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw fail("unavailable");
+    return await r.json();
+  }
+
+  return {
+    async init() {
+      try {
+        const s = await call("status");
+        setupDone = !!s.setupDone;
+        current = s.user || null;
+        if (!current) setTok("");
+        setTimeout(() => emit(current), 0);
+      } catch (e) {
+        // Se estiver rodando localmente sem a função /api/store, cai para o modo local
+        console.warn("Cloud API indisponível localmente, usando fallback local:", e);
+        Object.assign(this, demoImpl());
+        return this.init();
+      }
+    },
+    onAuth(cb) { listeners.push(cb); },
+    me: () => current,
+    async isSetupDone() { return setupDone; },
+    async signIn(email, password) {
+      const r = await call("signIn", { email, password });
+      setTok(r.token);
+      current = r.user;
+      emit(current);
+    },
+    async signOut() {
+      setTok("");
+      current = null;
+      emit(null);
+    },
+    async resetPassword() {
+      throw fail("reset-info", "Peça para outro administrador redefinir sua senha na aba Acessos.");
+    },
+    async adminSetPassword(uid, newPassword) {
+      await call("adminSetPassword", { uid, newPassword });
+    },
+    async changePassword(currentPw, newPw) {
+      await call("changePassword", { currentPw, newPw });
+    },
+    async setupFirstAdmin({ name, email, password }) {
+      const r = await call("setupFirstAdmin", { name, email, password });
+      setupDone = true;
+      setTok(r.token);
+      current = r.user;
+      emit(current);
+    },
+    async listAdmins() {
+      const r = await call("listAdmins");
+      return r.admins || [];
+    },
+    async createAdmin({ name, email, password }) {
+      await call("createAdmin", { name, email, password });
+    },
+    async setAdminActive(uid, active) {
+      await call("setAdminActive", { uid, active });
+    },
+    async updateMyName(name) {
+      const r = await call("updateMyName", { name });
+      if (current) current.name = r.name || name;
+    },
+    async loadContent() {
+      const st = await fetchState();
+      return { ...DEFAULT_CONTENT, ...(st.content || {}) };
+    },
+    async saveContent(content) {
+      await call("saveContent", { content });
+    },
+    async loadMedia() {
+      const st = await fetchState();
+      return { hero: "", about: "", ...(st.media || {}) };
+    },
+    async saveMedia(key, dataUrl) {
+      const r = await call("saveMedia", { key, dataUrl });
+      return r.url || "";
+    },
+    async loadAlbums() {
+      const st = await fetchState();
+      return (st.albums || DEFAULT_ALBUMS).slice().sort(byOrder);
+    },
+    async saveAlbum(album) {
+      await call("saveAlbum", { album });
+    },
+    async deleteAlbum(id) {
+      await call("deleteAlbum", { id });
+    },
+    async reorderAlbums(list) {
+      await call("reorderAlbums", { ids: list.map(a => a.id) });
+    },
+    async loadPhotos(albumId) {
+      const st = await fetchState();
+      return (st.photos || []).filter(p => p.albumId === albumId).sort(byOrder);
+    },
+    async addPhoto(albumId, { thumb, full, w, h }, order) {
+      const [tData, fData] = await Promise.all([blobToDataURL(thumb), blobToDataURL(full)]);
+      const r = await call("addPhoto", { albumId, thumb: tData, full: fData, w, h, order });
+      return r.photo;
+    },
+    async updatePhoto(id, { thumb, full, w, h }) {
+      const [tData, fData] = await Promise.all([blobToDataURL(thumb), blobToDataURL(full)]);
+      const r = await call("updatePhoto", { id, thumb: tData, full: fData, w, h });
+      return r.photo;
+    },
+    async deletePhotos(list) {
+      await call("deletePhotos", { ids: list.map(p => p.id) });
+    },
+    async reorderPhotos(list) {
+      await call("reorderPhotos", { ids: list.map(p => p.id) });
+    },
+    async movePhoto(p, toAlbum, order) {
+      await call("movePhoto", { id: p.id, toAlbum, order });
+    },
+    async getFull(p) {
+      return p.fullUrl || p.thumbUrl || p.thumb || "";
+    },
+    async getSnapshot() {
+      const st = await fetchState();
+      return { content: st.content, media: st.media, albums: st.albums, photos: st.photos };
+    },
+    async restoreSnapshot(snapshot) {
+      await call("restoreSnapshot", { snapshot });
+    }
+  };
+}
 
 /* =================================================================
    FIREBASE
@@ -104,15 +258,12 @@ function firebaseImpl() {
         b.set(d("admins", uid), { name, email: email.trim(), active: true, owner: true, createdAt: F.serverTimestamp() });
         b.set(d("meta", "setup"), { by: uid, at: F.serverTimestamp() });
         await b.commit();
-        // conteúdo inicial
         if (!(await F.getDoc(d("site", "content"))).exists()) await F.setDoc(d("site", "content"), DEFAULT_CONTENT);
         const al = await F.getDocs(F.collection(db, "albums"));
         if (al.empty) await commitInChunks(DEFAULT_ALBUMS.map(a => bb => { const { id, ...rest } = a; bb.set(d("albums", id), rest); }));
       } finally { busy = false; }
       await evaluate();
     },
-
-    /* ----- acessos ----- */
     async listAdmins() {
       const s = await F.getDocs(F.collection(db, "admins"));
       return s.docs.map(x => ({ uid: x.id, ...x.data() }));
@@ -130,14 +281,10 @@ function firebaseImpl() {
     },
     async setAdminActive(uid, active) { await F.updateDoc(d("admins", uid), { active }); },
     async updateMyName(name) { await F.updateDoc(d("admins", current.uid), { name }); current.name = name; },
-
-    /* ----- textos ----- */
     async loadContent() { const s = await F.getDoc(d("site", "content")); return { ...DEFAULT_CONTENT, ...(s.exists() ? s.data() : {}) }; },
     async saveContent(c) { await F.setDoc(d("site", "content"), c, { merge: true }); },
     async loadMedia() { const s = await F.getDoc(d("site", "media")); return { hero: "", about: "", ...(s.exists() ? s.data() : {}) }; },
-    async saveMedia(key, dataUrl) { await F.setDoc(d("site", "media"), { [key]: dataUrl }, { merge: true }); },
-
-    /* ----- categorias ----- */
+    async saveMedia(key, dataUrl) { await F.setDoc(d("site", "media"), { [key]: dataUrl }, { merge: true }); return dataUrl; },
     async loadAlbums() {
       const s = await F.getDocs(F.collection(db, "albums"));
       return s.docs.map(x => ({ id: x.id, ...x.data() })).sort(byOrder);
@@ -152,8 +299,6 @@ function firebaseImpl() {
       ]);
     },
     async reorderAlbums(list) { await commitInChunks(list.map((a, i) => b => b.update(d("albums", a.id), { order: i }))); },
-
-    /* ----- fotos ----- */
     async loadPhotos(albumId) {
       const s = await F.getDocs(F.query(F.collection(db, "photos"), F.where("albumId", "==", albumId)));
       return s.docs.map(x => ({ id: x.id, ...x.data() })).sort(byOrder);
@@ -223,12 +368,12 @@ function firebaseImpl() {
   async function removeStorage(p) {
     if (!p.paths || !p.paths.length) return;
     const S = await storage(), st = S.getStorage(app);
-    for (const path of p.paths) { try { await S.deleteObject(S.ref(st, path)); } catch (e) { /* já removido */ } }
+    for (const path of p.paths) { try { await S.deleteObject(S.ref(st, path)); } catch (e) { } }
   }
 }
 
 /* =================================================================
-   DEMONSTRAÇÃO (IndexedDB local)
+   FALLBACK LOCAL (IndexedDB — quando aberto sem servidor)
    ================================================================= */
 function demoImpl() {
   let listeners = [], current = null;
@@ -253,14 +398,18 @@ function demoImpl() {
     onAuth(cb) { listeners.push(cb); },
     me: () => current,
     async signIn(email, pw) {
-      await wait(250);
+      await wait(150);
       const a = (await admins()).find(x => x.email.toLowerCase() === email.trim().toLowerCase());
       if (!a || a.password !== pw) throw fail("auth/invalid-credential");
       if (a.active === false) { emit(null, "noaccess"); return; }
       await kvSet("demo-session", a.uid); await evaluate();
     },
     async signOut() { await kvDel("demo-session"); await evaluate(); },
-    async resetPassword() { await wait(300); },
+    async resetPassword() { await wait(150); },
+    async adminSetPassword(uid, nw) {
+      const list = await admins(); const a = list.find(x => x.uid === uid);
+      if (a) { a.password = nw; await kvSet("demo-admins", list); }
+    },
     async changePassword(cur, nw) {
       const list = await admins(); const a = list.find(x => x.uid === current.uid);
       if (a.password !== cur) throw fail("auth/wrong-password");
@@ -295,7 +444,7 @@ function demoImpl() {
     async loadContent() { return { ...DEFAULT_CONTENT, ...((await kvGet("content")) || {}) }; },
     async saveContent(c) { await kvSet("content", { ...((await kvGet("content")) || {}), ...c }); },
     async loadMedia() { return { hero: "", about: "", ...((await kvGet("media")) || {}) }; },
-    async saveMedia(key, v) { const m = (await kvGet("media")) || {}; m[key] = v; await kvSet("media", m); },
+    async saveMedia(key, v) { const m = (await kvGet("media")) || {}; m[key] = v; await kvSet("media", m); return v; },
     async loadAlbums() { return (await albums()).sort(byOrder); },
     async saveAlbum(a) {
       const al = await albums(); const i = al.findIndex(x => x.id === a.id);
@@ -344,8 +493,17 @@ function demoImpl() {
       if (x) { x.albumId = toAlbum; x.order = order; await kvSet("photos", ps); }
       await bumpCount(p.albumId, -1); await bumpCount(toAlbum, 1);
     },
-    async getFull(p) { return (await kvGet("full:" + p.id)) || p.thumb; }
+    async getFull(p) { return (await kvGet("full:" + p.id)) || p.thumb; },
+    async getSnapshot() {
+      return { content: await this.loadContent(), media: await this.loadMedia(), albums: await this.loadAlbums(), photos: await photos() };
+    },
+    async restoreSnapshot(s) {
+      if (s.content) await kvSet("content", s.content);
+      if (s.media) await kvSet("media", s.media);
+      if (s.albums) await kvSet("albums", s.albums);
+      if (s.photos) await kvSet("photos", s.photos);
+    }
   };
 }
 
-export const api = MODE === "firebase" ? firebaseImpl() : demoImpl();
+export const api = MODE === "firebase" ? firebaseImpl() : cloudImpl();

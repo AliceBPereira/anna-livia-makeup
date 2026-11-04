@@ -1,6 +1,7 @@
 /* Leitura pública dos dados do site.
-   - Modo Firebase: usa a API REST do Firestore (leve, sem carregar o SDK).
-   - Modo demonstração: lê do IndexedDB do navegador. */
+   - Modo Cloud (Vercel Blob via /api/store): sincronizado em todos os dispositivos.
+   - Modo Firebase: usa a API REST do Firestore.
+   - Fallback local (IndexedDB) apenas se estiver rodando sem servidor local. */
 import { firebaseConfig, MODE } from "./config.js";
 import { DEFAULT_CONTENT, DEFAULT_ALBUMS } from "./defaults.js";
 import { kvGet } from "./idb.js";
@@ -55,24 +56,63 @@ async function restWhere(col, field, value) {
 
 const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
 
+let cloudPromise = null;
+let cloudData = null;
+
+export async function fetchCloudState(force = false) {
+  if (!force && cloudPromise) return cloudPromise;
+  cloudPromise = (async () => {
+    try {
+      const r = await fetch(`/api/store?t=${Date.now()}`, { cache: "no-store" });
+      if (!r.ok) throw new Error("API " + r.status);
+      cloudData = await r.json();
+      return cloudData;
+    } catch (e) {
+      cloudPromise = null;
+      return null;
+    }
+  })();
+  return cloudPromise;
+}
+
 export async function getContent() {
+  if (MODE === "cloud") {
+    const st = await fetchCloudState();
+    if (st && st.content) return { ...DEFAULT_CONTENT, ...st.content };
+  }
   const c = MODE === "firebase" ? await restGet("site/content") : await kvGet("content");
   return { ...DEFAULT_CONTENT, ...(c || {}) };
 }
+
 export async function getMedia() {
+  if (MODE === "cloud") {
+    const st = await fetchCloudState();
+    if (st && st.media) return { hero: "", about: "", ...st.media };
+  }
   const m = MODE === "firebase" ? await restGet("site/media") : await kvGet("media");
   return { hero: "", about: "", ...(m || {}) };
 }
+
 export async function listAlbums() {
+  if (MODE === "cloud") {
+    const st = await fetchCloudState();
+    if (st && st.albums) return st.albums.slice().sort(byOrder);
+  }
   const list = MODE === "firebase" ? await restList("albums") : await kvGet("albums");
   return (list && list.length ? list : DEFAULT_ALBUMS).slice().sort(byOrder);
 }
+
 export async function listPhotos(albumId) {
+  if (MODE === "cloud") {
+    const st = await fetchCloudState();
+    if (st && st.photos) return st.photos.filter(p => p.albumId === albumId).sort(byOrder);
+  }
   let list;
   if (MODE === "firebase") list = await restWhere("photos", "albumId", albumId);
   else list = ((await kvGet("photos")) || []).filter(p => p.albumId === albumId);
   return list.sort(byOrder);
 }
+
 export async function getFullImage(photo) {
   if (photo.fullUrl) return photo.fullUrl;
   if (MODE === "firebase") {
@@ -81,4 +121,5 @@ export async function getFullImage(photo) {
   }
   return (await kvGet("full:" + photo.id)) || photo.thumb;
 }
+
 export const thumbSrc = p => p.thumbUrl || p.thumb || "";

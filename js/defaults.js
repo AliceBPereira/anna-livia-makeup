@@ -55,8 +55,23 @@ export const DEFAULT_CONTENT = {
 
   // Localização
   locationTitle: "Realce sua beleza para momentos especiais.",
-  locationText: "O atendimento é feito no estúdio, com hora marcada."
+  locationText: "O atendimento é feito no estúdio, com hora marcada.",
+
+  // Cores principais do tema (originais padrão em destaque)
+  colorPage: "#14110F",
+  colorCol: "#231F1B",
+  colorCard: "#342D27",
+  colorGold: "#C8A96A",
+  colorInk: "#F7F4EF"
 };
+
+export const THEME_COLORS = [
+  { key: "colorGold", label: "Cor de Destaque (Dourado / Botões)", default: "#C8A96A", presets: ["#C8A96A", "#D9B48F", "#D4AF37", "#C9968A", "#B68D65"] },
+  { key: "colorPage", label: "Fundo Externo da Página", default: "#14110F", presets: ["#14110F", "#1C1916", "#0E0C0A", "#1E1614", "#26201C"] },
+  { key: "colorCol", label: "Fundo do Painel Principal", default: "#231F1B", presets: ["#231F1B", "#2A2622", "#1B1714", "#2E2320", "#332B25"] },
+  { key: "colorCard", label: "Cor dos Cards e Blocos", default: "#342D27", presets: ["#342D27", "#332E29", "#28221D", "#3D2F2B", "#423830"] },
+  { key: "colorInk", label: "Cor Principal dos Textos", default: "#F7F4EF", presets: ["#F7F4EF", "#F3EEE6", "#FFFFFF", "#F5E6D8", "#EAE0D5"] }
+];
 
 export const GROUPS = {
   maquiagem: { label: "Maquiagem", cta: "Agendar maquiagem", prefix: "Maquiagem" },

@@ -1,5 +1,5 @@
 import { api, MODE, errMsg, blobToDataURL } from "./admin-api.js";
-import { CONTENT_FORM, GROUPS } from "../js/defaults.js";
+import { CONTENT_FORM, GROUPS, THEME_COLORS, DEFAULT_CONTENT } from "../js/defaults.js";
 import { processPhoto, makeCover, processSiteImage, loadImage, compressCanvas } from "./image.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -28,7 +28,47 @@ const IC = {
   rot: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4.5h-4.5"/></svg>'
 };
 
-const st = { tab: "", albums: [], photos: [], selecting: false, sel: new Set(), dirty: false, uploading: 0, token: 0, sortables: [] };
+const st = { tab: "", albums: [], photos: [], selecting: false, sel: new Set(), dirty: false, uploading: 0, token: 0, sortables: [], undoStack: [] };
+
+/* =============================== histórico / desfazer (Undo) =============================== */
+function updateUndoBtn() {
+  const b = $("#undoBtn");
+  if (!b) return;
+  b.hidden = st.undoStack.length === 0;
+  if (st.undoStack.length) {
+    const last = st.undoStack[st.undoStack.length - 1];
+    b.title = `Desfazer: ${last.label}`;
+    $("span", b).textContent = `Desfazer (${st.undoStack.length})`;
+  }
+}
+
+async function recordUndo(label) {
+  if (!api.getSnapshot) return;
+  try {
+    const snap = await api.getSnapshot();
+    st.undoStack.push({ label, snap });
+    if (st.undoStack.length > 15) st.undoStack.shift();
+    updateUndoBtn();
+  } catch (e) { console.warn("undo snapshot err", e); }
+}
+
+async function runUndo() {
+  if (!st.undoStack.length || !api.restoreSnapshot) return;
+  const { label, snap } = st.undoStack.pop();
+  updateUndoBtn();
+  const btn = $("#undoBtn");
+  await busy(btn, async () => {
+    try {
+      await api.restoreSnapshot(snap);
+      localStorage.removeItem("alm-cache-v1");
+      toast(`Desfeito: ${label}`);
+      st.albums = [];
+      route();
+    } catch (e) {
+      toast(errMsg(e), "bad");
+    }
+  });
+}
 
 /* =============================== avisos e janelas =============================== */
 let toastT;
@@ -170,6 +210,8 @@ function enterApp() {
   if (entered) return;
   entered = true;
   $$("#tabs button").forEach(b => b.onclick = () => { location.hash = "#" + b.dataset.tab; });
+  const ub = $("#undoBtn");
+  if (ub) ub.onclick = () => runUndo();
   addEventListener("hashchange", onHash);
   addEventListener("beforeunload", e => { if (st.uploading || st.dirty) { e.preventDefault(); e.returnValue = ""; } });
   route();
@@ -214,14 +256,24 @@ const GROUP_ORDER = ["portfolio", "maquiagem", "penteados"];
 
 async function viewAlbums() {
   const tk = st.token; loading();
-  try { st.albums = await api.loadAlbums(); } catch (e) { return failView(e); }
+  let m = {};
+  try { [st.albums, m] = await Promise.all([api.loadAlbums(), api.loadMedia().catch(() => ({}))]); } catch (e) { return failView(e); }
   if (tk !== st.token) return;
+  const heroSrc = m?.hero || "../imagens/capa.jpg";
   const item = (a, drag) => `<li class="album" data-id="${esc(a.id)}">
       ${drag ? `<span class="handle" aria-label="Arraste para mudar a ordem">${IC.grip}</span>` : '<span class="handle"></span>'}
       <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}">${a.coverThumb ? "" : IC.img}</span>
       <span class="meta"><b>${esc(a.title)}</b><small>${plural(a.count || 0, "foto", "fotos")}</small></span>${IC.chev}</li>`;
   content.innerHTML = `
-    <h2 class="title">Fotos do site</h2>
+    <div class="panel" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px;background:#FBF8F3;border-color:#E5DAC8">
+      <span class="cov" style="width:58px;height:74px;border-radius:10px;background-size:cover;background-position:center;background-image:url('${esc(heroSrc)}')"></span>
+      <div style="flex:1;min-width:190px">
+        <b style="display:block;font-size:.96rem">Capa Principal e Cores do Site</b>
+        <span class="hint" style="margin:3px 0 0">Troque a foto de capa principal, personalize as cores mantendo as originais salvas ou edite os textos.</span>
+      </div>
+      <a class="btn gold sm" href="#textos">${IC.edit} Mudar capa e cores</a>
+    </div>
+    <h2 class="title">Fotos das galerias</h2>
     <p class="help">Toque em uma categoria para adicionar, apagar ou mudar a ordem das fotos. Arraste pelos pontinhos <b>⋮⋮</b> para mudar a ordem das categorias.</p>
     ${GROUP_ORDER.map(g => {
       const list = st.albums.filter(a => a.group === g);
@@ -242,7 +294,7 @@ async function viewAlbums() {
       if (ev.oldIndex === ev.newIndex) return;
       const ids = $$("ul.albums li").map(li => li.dataset.id);
       const list = ids.map(id => st.albums.find(a => a.id === id));
-      try { await api.reorderAlbums(list); list.forEach((a, i) => a.order = i); toast("Ordem salva"); }
+      try { await recordUndo("Ordem das categorias"); await api.reorderAlbums(list); list.forEach((a, i) => a.order = i); localStorage.removeItem("alm-cache-v1"); toast("Ordem salva"); }
       catch (x) { toast(errMsg(x), "bad"); viewAlbums(); }
     }
   })));
@@ -270,7 +322,8 @@ async function newAlbum(group) {
           id: uniqueId(title), group, title, subtitle: fv(f, "subtitle"), description: fv(f, "description"),
           order: Math.max(0, ...st.albums.map(x => x.order || 0)) + 1, count: 0, coverThumb: "", coverPhotoId: ""
         };
-        await api.saveAlbum(a); st.albums.push(a);
+        await recordUndo(`Criar categoria ${title}`);
+        await api.saveAlbum(a); st.albums.push(a); localStorage.removeItem("alm-cache-v1");
         return a.id;
       }
     }]
@@ -292,7 +345,8 @@ async function editAlbum(a) {
         const title = fv(f, "title"); if (!title) throw { friendly: "O nome não pode ficar vazio." };
         const patch = { id: a.id, title };
         if (!isPf) { patch.subtitle = fv(f, "subtitle"); patch.description = fv(f, "description"); }
-        await api.saveAlbum(patch); Object.assign(a, patch);
+        await recordUndo(`Editar categoria ${a.title}`);
+        await api.saveAlbum(patch); Object.assign(a, patch); localStorage.removeItem("alm-cache-v1");
         return "saved";
       }
     }],
@@ -303,7 +357,7 @@ async function editAlbum(a) {
     const n = st.photos.length;
     const ok = await confirmBox("Apagar categoria?", `A categoria <b>${esc(a.title)}</b>${n ? ` e ${plural(n, "foto", "fotos")}` : ""} vão sair do site. Isso não pode ser desfeito.`, "Apagar", true);
     if (!ok) return;
-    try { loading(); await api.deleteAlbum(a.id); toast("Categoria apagada"); location.hash = "#fotos"; }
+    try { loading(); await recordUndo(`Apagar categoria ${a.title}`); await api.deleteAlbum(a.id); localStorage.removeItem("alm-cache-v1"); toast("Categoria apagada"); location.hash = "#fotos"; }
     catch (e) { toast(errMsg(e), "bad"); renderAlbum(a); }
   }
 }
@@ -391,7 +445,7 @@ function renderAlbum(a) {
 }
 
 async function saveOrder(a) {
-  try { await api.reorderPhotos(st.photos); st.photos.forEach((p, i) => p.order = i); toast("Ordem salva"); }
+  try { await recordUndo("Ordem das fotos"); await api.reorderPhotos(st.photos); st.photos.forEach((p, i) => p.order = i); localStorage.removeItem("alm-cache-v1"); toast("Ordem salva"); }
   catch (e) { toast(errMsg(e), "bad"); }
   renderAlbum(a);
 }
@@ -533,11 +587,13 @@ async function cropPhoto(p, a) {
   const fullSrc = await api.getFull(p);
   const canvas = await openCropModal(fullSrc, 4 / 5, "Ajustar foto");
   if (!canvas) return;
+  await recordUndo("Ajustar foto");
   const full = await compressCanvas(canvas, 1600, 680 * 1024, 0.85);
   const thumb = await compressCanvas(canvas, 900, 150 * 1024, 0.8);
   const updated = await api.updatePhoto(p.id, { thumb: thumb.blob, full: full.blob, w: full.w, h: full.h });
   Object.assign(p, updated);
   if (a.coverPhotoId === p.id) await setCover(a, p);
+  localStorage.removeItem("alm-cache-v1");
   toast("Foto ajustada");
   renderAlbum(a);
 }
@@ -572,11 +628,13 @@ async function deletePhotos(list) {
     `${list.length === 1 ? "A foto sai" : "As fotos saem"} do site na hora. Isso não pode ser desfeito.`, "Apagar", true);
   if (!ok) return;
   try {
+    await recordUndo(list.length === 1 ? "Apagar foto" : `Apagar ${list.length} fotos`);
     await api.deletePhotos(list);
     const ids = new Set(list.map(p => p.id));
     st.photos = st.photos.filter(p => !ids.has(p.id));
     a.count = st.photos.length;
     await fixCover(a);
+    localStorage.removeItem("alm-cache-v1");
     toast(list.length === 1 ? "Foto apagada" : `${list.length} fotos apagadas`);
   } catch (e) { toast(errMsg(e), "bad"); }
   renderAlbum(a);
@@ -596,6 +654,7 @@ async function movePhoto(p) {
   if (!to) return;
   const dest = st.albums.find(x => x.id === to);
   try {
+    await recordUndo("Mover foto");
     await api.movePhoto(p, to, Math.floor(Date.now() / 1000));
     st.photos = st.photos.filter(x => x.id !== p.id);
     a.count = st.photos.length; dest.count = (dest.count || 0) + 1;
@@ -604,6 +663,7 @@ async function movePhoto(p) {
       const saved = st.photos; st.photos = [p];
       await setCover(dest, p); st.photos = saved;
     }
+    localStorage.removeItem("alm-cache-v1");
     toast(`Foto movida para ${dest.title}`);
   } catch (e) { toast(errMsg(e), "bad"); }
   renderAlbum(a);
@@ -612,6 +672,7 @@ async function movePhoto(p) {
 async function uploadFiles(files, a) {
   files = files.filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
   if (!files.length) return;
+  await recordUndo(files.length === 1 ? "Adicionar foto" : `Adicionar ${files.length} fotos`);
   $("#emptybox")?.remove();
   const grid = $("#grid");
   if (st.selecting) toggleSelect(false);
@@ -647,6 +708,7 @@ async function uploadFiles(files, a) {
   st.uploading--;
   a.count = st.photos.length;
   try { await fixCover(a); } catch (e) { console.error(e); }
+  localStorage.removeItem("alm-cache-v1");
   if (ok) toast(ok === 1 ? "1 foto adicionada ao site" : `${ok} fotos adicionadas ao site`);
   if (errors.length) modal({
     title: "Algumas fotos não foram enviadas",
@@ -656,39 +718,90 @@ async function uploadFiles(files, a) {
   renderAlbum(a);
 }
 
-/* =============================== TEXTOS =============================== */
+/* =============================== CAPA, CORES E TEXTOS =============================== */
 let media = {};
+let pendingMedia = {};
+let colorState = {};
+
+function markDirty() {
+  st.dirty = true;
+  const topBtn = $("#topSaveBtn");
+  if (topBtn) topBtn.disabled = false;
+  showSavebar();
+}
+
 async function viewTextos() {
   const tk = st.token; loading();
   let c;
   try { [c, media] = await Promise.all([api.loadContent(), api.loadMedia()]); } catch (e) { return failView(e); }
   if (tk !== st.token) return;
   st.dirty = false;
+  pendingMedia = {};
+  colorState = {};
+  THEME_COLORS.forEach(tc => { colorState[tc.key] = (c[tc.key] || tc.default).toUpperCase(); });
+
   content.innerHTML = `
-    <h2 class="title">Textos e informações</h2>
-    <p class="help">Altere o que quiser e toque em <b>Salvar</b>. As mudanças aparecem no site na hora.</p>
-    <details class="panel" open><summary>Fotos fixas do site</summary><div class="body">
-      ${imgField("hero", "Foto da capa", "Use uma foto vertical com o rosto do lado direito — o nome aparece à esquerda.")}
-      ${imgField("about", "Foto do “Sobre”", "Aparece ao lado do texto de apresentação.")}
-    </div></details>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+      <h2 class="title" style="margin:0">Capa, Cores e Textos</h2>
+      <button type="button" class="btn primary" id="topSaveBtn" data-save-all disabled>Salvar alterações</button>
+    </div>
+    <p class="help">Altere a foto da capa principal, as cores do site ou os textos e toque em <b>Salvar alterações</b>. As mudanças aparecem em todos os computadores e celulares.</p>
+    <details class="panel" open>
+      <summary>Foto da Capa Principal e Foto do “Sobre”</summary>
+      <div class="body" id="mediaBody">${renderMediaFields()}</div>
+    </details>
+    <details class="panel" open>
+      <summary>Cores Principais do Site</summary>
+      <div class="body" id="colorsBody">${renderColorFields()}</div>
+    </details>
     <form id="txtForm" novalidate>
-    ${CONTENT_FORM.map((sec, i) => `<details class="panel" ${i === 0 ? "open" : ""}><summary>${esc(sec.title)}</summary><div class="body">
-      ${sec.fields.map(([k, label, type, hint]) => field(k, label, type, c[k], hint || "")).join("")}
-    </div></details>`).join("")}
+      ${CONTENT_FORM.map((sec, i) => `<details class="panel" ${i === 0 ? "open" : ""}><summary>${esc(sec.title)}</summary><div class="body">
+        ${sec.fields.map(([k, label, type, hint]) => field(k, label, type, c[k], hint || "")).join("")}
+      </div></details>`).join("")}
+      <div style="margin-top:16px;display:flex;justify-content:flex-end">
+        <button type="button" class="btn primary" data-save-all>Salvar alterações</button>
+      </div>
     </form>`;
+
   const form = $("#txtForm");
-  form.addEventListener("input", () => { if (!st.dirty) { st.dirty = true; showSavebar(); } });
+  form.addEventListener("input", () => markDirty());
   form.addEventListener("submit", e => e.preventDefault());
   bindImgFields();
+  bindColorFields();
+  bindSaveAllBtns();
 }
+
+function renderMediaFields() {
+  const hasPending = Object.keys(pendingMedia).length > 0;
+  return `
+    ${imgField("hero", "Foto da Capa Principal", "Aparece em destaque no topo do site (celular e computador). Use uma foto vertical.")}
+    ${imgField("about", "Foto do “Sobre”", "Aparece ao lado do texto de apresentação da Anna Lívia.")}
+    ${hasPending ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span style="font-size:.82rem;color:#7A5A00"><b>Alteração de foto pronta!</b> Clique em Salvar para publicar no site.</span>
+      <button type="button" class="btn primary sm" data-save-all>Salvar foto no site</button>
+    </div>` : ""}`;
+}
+
 function imgField(key, title, hint) {
-  const src = media[key] || (key === "hero" ? "../imagens/capa.jpg" : "");
+  const isStaged = key in pendingMedia;
+  const val = isStaged ? pendingMedia[key] : media[key];
+  const src = val || "../imagens/capa.jpg";
+  const badge = isStaged
+    ? `<span class="badge" style="background:#FFF3CD;color:#7A5A00">Não salva</span>`
+    : (media[key] ? `<span class="badge">Personalizada</span>` : `<span class="badge">Original</span>`);
   return `<div class="imgfield" data-key="${key}">
     <span class="pv ${key === "about" ? "ab" : ""}" style="${src ? `background-image:url('${esc(src)}')` : ""}"></span>
-    <div><b>${esc(title)}</b><span class="hint">${esc(hint)}</span>
-      <div class="acts"><span class="btn sm upl" style="position:relative;overflow:hidden">Trocar foto<input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></span>
-      ${media[key] ? `<button type="button" class="btn sm danger" data-reset>${key === "hero" ? "Voltar à original" : "Remover"}</button>` : ""}</div></div></div>`;
+    <div>
+      <b>${esc(title)} ${badge}</b>
+      <span class="hint">${esc(hint)}</span>
+      <div class="acts">
+        <span class="btn sm gold upl" style="position:relative;overflow:hidden">Trocar foto<input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></span>
+        ${val ? `<button type="button" class="btn sm danger" data-reset>Voltar à foto original</button>` : ""}
+      </div>
+    </div>
+  </div>`;
 }
+
 function bindImgFields() {
   $$(".imgfield").forEach(box => {
     const key = box.dataset.key;
@@ -697,50 +810,167 @@ function bindImgFields() {
       const btn = $(".upl", box);
       try {
         const ratio = key === "hero" ? 2 / 3 : 3 / 4;
-        const canvas = await openCropModal(f, ratio, key === "hero" ? "Enquadrar foto da capa" : "Enquadrar foto do Sobre");
+        const canvas = await openCropModal(f, ratio, key === "hero" ? "Enquadrar foto da capa principal" : "Enquadrar foto do Sobre");
         if (!canvas) return;
         await busy(btn, async () => {
           const maxB = key === "hero" ? 420 * 1024 : 200 * 1024;
           const { blob } = await compressCanvas(canvas, key === "hero" ? 1536 : 1200, maxB, 0.85);
           const url = await blobToDataURL(blob);
-          await api.saveMedia(key, url); media[key] = url;
-          toast("Foto atualizada no site");
-          box.outerHTML = imgField(key, $("b", box).textContent, $(".hint", box).textContent);
+          pendingMedia[key] = url;
+          markDirty();
+          $("#mediaBody").innerHTML = renderMediaFields();
           bindImgFields();
+          bindSaveAllBtns();
+          toast("Foto pronta! Toque em Salvar alterações para publicar.");
         });
       } catch (x) { toast(errMsg(x), "bad"); }
     };
     const r = $("[data-reset]", box);
-    if (r) r.onclick = async () => {
-      if (!(await confirmBox("Remover foto?", key === "hero" ? "A capa volta a usar a foto original." : "O espaço da foto fica vazio no site.", "Remover", true))) return;
-      try {
-        await api.saveMedia(key, ""); media[key] = "";
-        toast("Pronto");
-        box.outerHTML = imgField(key, $("b", box).textContent, $(".hint", box).textContent);
-        bindImgFields();
-      } catch (x) { toast(errMsg(x), "bad"); }
+    if (r) r.onclick = () => {
+      pendingMedia[key] = "";
+      markDirty();
+      $("#mediaBody").innerHTML = renderMediaFields();
+      bindImgFields();
+      bindSaveAllBtns();
+      toast("Foto original selecionada. Toque em Salvar para confirmar.");
     };
   });
 }
+
+function renderColorFields() {
+  const isAllOrig = THEME_COLORS.every(tc => (colorState[tc.key] || tc.default).toUpperCase() === tc.default.toUpperCase());
+  return `
+    <div class="orig-palette">
+      <div style="flex:1;min-width:220px">
+        <b style="display:block;font-size:.88rem;color:var(--ink);margin-bottom:4px">★ Cores Originais do Site (Sempre em Destaque)</b>
+        <small style="display:block;font-size:.76rem;color:var(--muted);margin-bottom:9px">Estas são as cores originais da identidade visual. Mesmo se você mudar abaixo, elas continuam salvas aqui para você voltar quando quiser:</small>
+        <div class="swatches">
+          ${THEME_COLORS.map(tc => `<button type="button" class="orig-chip" data-set-color="${tc.key}" data-hex="${tc.default}" title="Usar cor original (${tc.default}) em ${esc(tc.label)}"><i style="background:${tc.default}"></i><span>${esc(tc.label.split(" (")[0])}</span></button>`).join("")}
+        </div>
+      </div>
+      <button type="button" class="btn sm ${isAllOrig ? "" : "gold"}" id="resetAllColorsBtn" ${isAllOrig ? "disabled" : ""}>${IC.rot} Voltar às cores originais</button>
+    </div>
+    ${THEME_COLORS.map(tc => {
+      const cur = (colorState[tc.key] || tc.default).toUpperCase();
+      const isOrig = cur === tc.default.toUpperCase();
+      return `<div class="color-row" data-ckey="${tc.key}">
+        <div class="c-info">
+          <b>${esc(tc.label)} ${isOrig ? '<span class="badge">Original</span>' : '<span class="badge" style="background:#FFF3CD;color:#7A5A00">Personalizada</span>'}</b>
+          <small>Código atual: <code>${esc(cur)}</code> · Original: <code>${esc(tc.default)}</code></small>
+        </div>
+        <div class="color-ctrl">
+          ${tc.presets.map((hex, idx) => {
+            const h = hex.toUpperCase();
+            return `<button type="button" class="swatch ${idx === 0 ? "orig" : ""} ${cur === h ? "active" : ""}" style="background:${h}" data-set-color="${tc.key}" data-hex="${h}" title="${idx === 0 ? `Cor original (${h})` : h}"></button>`;
+          }).join("")}
+          <label class="color-picker-wrap" title="Escolher qualquer cor">
+            <input type="color" data-color-picker="${tc.key}" value="${cur}">
+            <span>Outra cor</span>
+          </label>
+          ${!isOrig ? `<button type="button" class="btn sm" data-set-color="${tc.key}" data-hex="${tc.default}">Voltar ao original</button>` : ""}
+        </div>
+      </div>`;
+    }).join("")}
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:flex-end">
+      <button type="button" class="btn primary sm" data-save-all>Salvar cores no site</button>
+    </div>`;
+}
+
+function bindColorFields() {
+  const body = $("#colorsBody");
+  if (!body) return;
+  body.onclick = e => {
+    const setBtn = e.target.closest("[data-set-color]");
+    if (setBtn) {
+      const k = setBtn.dataset.setColor, hex = setBtn.dataset.hex.toUpperCase();
+      if (colorState[k] !== hex) {
+        colorState[k] = hex;
+        markDirty();
+        body.innerHTML = renderColorFields();
+        bindColorFields();
+        bindSaveAllBtns();
+      }
+      return;
+    }
+    const resetAll = e.target.closest("#resetAllColorsBtn");
+    if (resetAll) {
+      THEME_COLORS.forEach(tc => { colorState[tc.key] = tc.default.toUpperCase(); });
+      markDirty();
+      body.innerHTML = renderColorFields();
+      bindColorFields();
+      bindSaveAllBtns();
+      toast("Cores originais restauradas! Toque em Salvar para publicar.");
+    }
+  };
+  $$("[data-color-picker]", body).forEach(inp => {
+    inp.oninput = e => {
+      const k = inp.dataset.colorPicker;
+      colorState[k] = e.target.value.toUpperCase();
+      markDirty();
+    };
+    inp.onchange = e => {
+      const k = inp.dataset.colorPicker;
+      colorState[k] = e.target.value.toUpperCase();
+      markDirty();
+      body.innerHTML = renderColorFields();
+      bindColorFields();
+      bindSaveAllBtns();
+    };
+  });
+}
+
+function bindSaveAllBtns() {
+  $$("[data-save-all]").forEach(btn => {
+    btn.onclick = e => busy(e.currentTarget, async () => {
+      try {
+        await saveTextos();
+        toast("Alterações salvas e publicadas no site!");
+      } catch (x) { toast(errMsg(x), "bad"); }
+    });
+  });
+}
+
 function showSavebar() {
   if ($("#savebar")) return;
   const bar = document.createElement("div");
   bar.className = "savebar"; bar.id = "savebar";
-  bar.innerHTML = `<span>Alterações não salvas</span><button class="btn primary" id="saveBtn">Salvar</button>`;
+  bar.innerHTML = `<span>Você tem alterações não salvas</span><div style="display:flex;gap:8px"><button type="button" class="btn sm" id="discardBtn" style="background:rgba(255,255,255,.12);color:#fff;border-color:transparent">Descartar</button><button type="button" class="btn primary" id="saveBtn">Salvar alterações</button></div>`;
   document.body.appendChild(bar);
+  $("#discardBtn").onclick = () => {
+    st.dirty = false;
+    pendingMedia = {};
+    $("#savebar")?.remove();
+    viewTextos();
+    toast("Alterações descartadas");
+  };
   $("#saveBtn").onclick = e => busy(e.currentTarget, async () => {
-    try { await saveTextos(); toast("Textos publicados no site"); } catch (x) { toast(errMsg(x), "bad"); }
+    try { await saveTextos(); toast("Alterações salvas e publicadas no site!"); } catch (x) { toast(errMsg(x), "bad"); }
   });
 }
+
 async function saveTextos() {
   const form = $("#txtForm"); if (!form) return;
+  await recordUndo("Alterar capa, cores ou textos");
+  for (const k of Object.keys(pendingMedia)) {
+    await api.saveMedia(k, pendingMedia[k]);
+    media[k] = pendingMedia[k];
+  }
+  pendingMedia = {};
   const data = {};
   CONTENT_FORM.forEach(sec => sec.fields.forEach(([k, , type]) => {
     const el = form.elements[k];
-    data[k] = type === "checkbox" ? el.checked : el.value.trim();
+    if (el) data[k] = type === "checkbox" ? el.checked : el.value.trim();
   }));
+  THEME_COLORS.forEach(tc => {
+    data[tc.key] = colorState[tc.key] || tc.default;
+  });
   await api.saveContent(data);
-  st.dirty = false; $("#savebar")?.remove();
+  localStorage.removeItem("alm-cache-v1");
+  st.dirty = false;
+  $("#savebar")?.remove();
+  const topBtn = $("#topSaveBtn");
+  if (topBtn) topBtn.disabled = true;
+  if ($("#mediaBody")) { $("#mediaBody").innerHTML = renderMediaFields(); bindImgFields(); bindSaveAllBtns(); }
 }
 
 /* =============================== ACESSOS =============================== */
@@ -786,6 +1016,22 @@ async function viewAcessos() {
       }
       if (b.dataset.act === "on") { await busy(b, () => api.setAdminActive(uid, true)); toast("Acesso reativado"); viewAcessos(); }
       if (b.dataset.act === "reset") {
+        if (api.adminSetPassword) {
+          const ok = await modal({
+            title: `Nova senha para ${name}`,
+            body: field("password", "Nova senha (mínimo 6 caracteres)", "password", "", "", 'autocomplete="new-password"'),
+            actions: [{ label: "Cancelar", value: false }, {
+              label: "Salvar senha", cls: "primary", primary: true, run: async f => {
+                const pw = f.elements.password.value;
+                if (pw.length < 6) throw { friendly: "A senha precisa ter pelo menos 6 caracteres." };
+                await api.adminSetPassword(uid, pw);
+                return true;
+              }
+            }]
+          });
+          if (ok) toast(`Senha de ${name} atualizada`);
+          return;
+        }
         if (!(await confirmBox("Redefinir senha?", `Vamos enviar um e-mail para <b>${esc(email)}</b> com um link para criar uma nova senha.`, "Enviar e-mail"))) return;
         await busy(b, () => api.resetPassword(email));
         toast(MODE === "demo" ? "No modo demonstração nenhum e-mail é enviado." : "E-mail enviado");

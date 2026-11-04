@@ -1,4 +1,4 @@
-import { getContent, getMedia, listAlbums, listPhotos, getFullImage, thumbSrc } from "./public-api.js";
+import { getContent, getMedia, listAlbums, listPhotos, getFullImage, thumbSrc, fetchCloudState } from "./public-api.js";
 import { DEFAULT_CONTENT, DEFAULT_ALBUMS, GROUPS } from "./defaults.js";
 
 const $ = s => document.querySelector(s);
@@ -234,9 +234,19 @@ lb.addEventListener("touchend", e => {
   else if (dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.5) closeLb();
 }, { passive: true });
 
-/* ---------------- capa, rodapé ---------------- */
+/* ---------------- capa, cores, rodapé ---------------- */
+function applyTheme(c) {
+  const root = document.documentElement.style;
+  root.setProperty("--page", c.colorPage || DEFAULT_CONTENT.colorPage);
+  root.setProperty("--col", c.colorCol || DEFAULT_CONTENT.colorCol);
+  root.setProperty("--card", c.colorCard || DEFAULT_CONTENT.colorCard);
+  root.setProperty("--gold", c.colorGold || DEFAULT_CONTENT.colorGold);
+  root.setProperty("--ink", c.colorInk || DEFAULT_CONTENT.colorInk);
+}
+
 function applyChrome() {
   const c = S.content;
+  applyTheme(c);
   document.querySelectorAll("[data-t]").forEach(el => { el.textContent = c[el.dataset.t] ?? ""; });
   const src = S.media.hero || "imagens/capa.jpg";
   if (hero.dataset.src !== src) {
@@ -292,21 +302,37 @@ $("#copy").addEventListener("click", () => {
 /* ---------------- inicialização ---------------- */
 function setState(s, rerender) {
   const json = JSON.stringify(s);
-  if (S && json === JSON.stringify(S)) return;
+  const changed = !S || json !== JSON.stringify(S);
   S = s;
+  Object.keys(photosCache).forEach(k => delete photosCache[k]);
   try { localStorage.setItem(CACHE, json); } catch (e) { /* cache cheio: ignora */ }
   applyChrome();
-  if (rerender) route();
+  if (rerender && changed) route();
+  else if (rerender && $("#gallery")) fillGallery($("#gallery").dataset.album);
 }
-(async function boot() {
-  let cached = null;
-  try { cached = JSON.parse(localStorage.getItem(CACHE) || "null"); } catch (e) { }
-  if (cached && cached.content) { S = cached; applyChrome(); route(); }
+
+async function refreshSite(force = false) {
   try {
+    if (force) await fetchCloudState(true);
+    const cloud = await fetchCloudState(false);
     const [content, media, albums] = await Promise.all([getContent(), getMedia(), listAlbums()]);
-    setState({ content, media, albums }, true);
+    setState({ content, media, albums, updatedAt: cloud?.updatedAt || Date.now() }, true);
   } catch (e) {
     console.error(e);
     if (!S) { S = { content: { ...DEFAULT_CONTENT }, media: { hero: "", about: "" }, albums: DEFAULT_ALBUMS }; applyChrome(); route(); }
   }
+}
+
+(async function boot() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(CACHE) || "null"); } catch (e) { }
+  if (cached && cached.content) { S = cached; applyChrome(); route(); }
+  await refreshSite(true);
 })();
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshSite(true);
+});
+window.addEventListener("storage", e => {
+  if (e.key === CACHE) refreshSite(true);
+});
