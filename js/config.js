@@ -11,10 +11,10 @@
    ============================================================= */
 export const firebaseConfig = {
   apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI",
-  messagingSenderId: "COLE_AQUI",
+  authDomain: "siteanalivia.firebaseapp.com",
+  projectId: "siteanalivia",
+  storageBucket: "siteanalivia.firebasestorage.app",
+  messagingSenderId: "515779491465",
   appId: "COLE_AQUI"
 };
 
