@@ -1,0 +1,873 @@
+import { api, MODE, errMsg, blobToDataURL } from "./admin-api.js";
+import { CONTENT_FORM, GROUPS } from "../js/defaults.js";
+import { processPhoto, makeCover, processSiteImage, loadImage, compressCanvas } from "./image.js";
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const content = $("#content");
+const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+
+const IC = {
+  back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  grip: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/></svg>',
+  img: '<svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.7"/><path d="M3.5 17l5-5 4 4 2.5-2.5 5.5 5.5"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  star: '<svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+  up: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  down: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>',
+  move: '<svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 14h6M15 11l3 3-3 3"/></svg>',
+  cover: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 17h8M8 13h8"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12l3 3 5-6"/></svg>',
+  ext: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  zoom: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M11 8.5v5M8.5 11h5"/></svg>',
+  crop: '<svg viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>',
+  rot: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4.5h-4.5"/></svg>'
+};
+
+const st = { tab: "", albums: [], photos: [], selecting: false, sel: new Set(), dirty: false, uploading: 0, token: 0, sortables: [] };
+
+/* =============================== avisos e janelas =============================== */
+let toastT;
+function toast(msg, type = "ok") {
+  const t = $("#toast");
+  t.textContent = msg; t.className = "toast on " + type;
+  clearTimeout(toastT); toastT = setTimeout(() => t.className = "toast " + type, type === "bad" ? 4500 : 2600);
+}
+
+function modal({ title = "", body = "", actions = [], sheet = false, onMount }) {
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "ov" + (sheet ? " sheet" : "");
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${title ? `<h3>${esc(title)}</h3>` : ""}<form class="mform" novalidate>${body}<p class="err" role="alert"></p><div class="acts"></div></form></div>`;
+    const form = $(".mform", ov), acts = $(".acts", ov), err = $(".err", ov);
+    if (!actions.length) { acts.remove(); err.remove(); }
+    let done = false;
+    const onKey = e => { if (e.key === "Escape") close(null); };
+    function close(v) { if (done) return; done = true; ov.remove(); removeEventListener("keydown", onKey); resolve(v); }
+    actions.forEach(a => {
+      const b = document.createElement("button");
+      b.type = a.primary ? "submit" : "button";
+      b.className = "btn " + (a.cls || "");
+      b.textContent = a.label;
+      b.addEventListener("click", async e => {
+        e.preventDefault();
+        if (!a.run) return close(a.value);
+        err.textContent = "";
+        const old = b.innerHTML; b.disabled = true; b.innerHTML = '<i class="spin"></i>';
+        try {
+          const r = await a.run(form);
+          if (r === false) { b.disabled = false; b.innerHTML = old; return; }
+          close(r === undefined ? true : r);
+        } catch (x) { console.error(x); err.textContent = errMsg(x); b.disabled = false; b.innerHTML = old; }
+      });
+      acts.appendChild(b);
+    });
+    form.addEventListener("submit", e => { e.preventDefault(); const p = $("button[type=submit]", acts); if (p) p.click(); });
+    ov.addEventListener("click", e => { if (e.target === ov) close(null); });
+    addEventListener("keydown", onKey);
+    $("#modals").appendChild(ov);
+    bindEyes(ov);
+    if (onMount) onMount(ov, close, err);
+    const f = $("input:not([type=checkbox]),textarea", ov);
+    if (f && !sheet && matchMedia("(hover:hover)").matches) setTimeout(() => f.focus(), 60);
+  });
+}
+const confirmBox = (title, text, ok = "Confirmar", danger = false) => modal({
+  title, body: `<p>${text}</p>`,
+  actions: [{ label: "Cancelar", value: false }, { label: ok, cls: danger ? "danger solid" : "primary", primary: true, value: true }]
+});
+function sheet(img, options) {
+  const body = (img ? `<img class="pvimg" src="${esc(img)}" alt="">` : "") +
+    options.map((o, i) => `<button type="button" class="opt ${o.cls || ""}" data-i="${i}">${o.icon || ""}<span>${esc(o.label)}</span></button>`).join("") +
+    `<button type="button" class="opt cancel" data-i="-1">Cancelar</button>`;
+  return modal({
+    sheet: true, body,
+    onMount(ov, close) {
+      ov.addEventListener("click", e => {
+        const b = e.target.closest(".opt"); if (!b) return;
+        const i = +b.dataset.i; close(i >= 0 ? options[i].value : null);
+      });
+    }
+  });
+}
+function bindEyes(root) {
+  $$(".eye", root).forEach(b => b.onclick = () => {
+    const i = b.previousElementSibling; i.type = i.type === "password" ? "text" : "password";
+  });
+}
+async function busy(btn, fn) {
+  const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="spin"></i>';
+  try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = old; }
+}
+const field = (name, label, type = "text", value = "", hint = "", extra = "") => {
+  if (type === "checkbox") return `<label class="check"><input type="checkbox" name="${name}" ${value ? "checked" : ""}> ${esc(label)}</label>`;
+  const input = type === "textarea"
+    ? `<textarea name="${name}" ${extra}>${esc(value)}</textarea>`
+    : type === "password"
+      ? `<span class="pw"><input type="password" name="${name}" value="${esc(value)}" ${extra}><button type="button" class="eye" aria-label="Mostrar senha"></button></span>`
+      : `<input type="${type}" name="${name}" value="${esc(value)}" ${extra}>`;
+  return `<label>${esc(label)}${input}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</label>`;
+};
+const fv = (form, n) => (form.elements[n]?.value || "").trim();
+
+/* =============================== entrada =============================== */
+const screens = ["boot", "login", "setup", "app"];
+const show = id => screens.forEach(s => $("#" + s).hidden = s !== id);
+
+async function boot() {
+  if (MODE === "demo") $("#demo").hidden = false;
+  bindEyes(document);
+  try { await api.init(); }
+  catch (e) { console.error(e); $("#boot").innerHTML = `<p class="err" style="text-align:center;padding:20px">Não foi possível carregar o painel. Verifique a internet e a configuração do Firebase.<br><small>${esc(errMsg(e))}</small></p>`; return; }
+  api.onAuth(async (user, reason) => {
+    if (user) return enterApp();
+    let setupDone = true;
+    try { setupDone = await api.isSetupDone(); } catch (e) { console.error(e); }
+    show(setupDone ? "login" : "setup");
+    if (reason === "noaccess") $("#loginErr").textContent = "Este acesso não tem permissão ou foi desativado.";
+  });
+}
+
+$("#loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, email = fv(f, "email"), pw = f.elements.password.value;
+  $("#loginErr").textContent = "";
+  if (!email || !pw) return $("#loginErr").textContent = "Preencha e-mail e senha.";
+  await busy($("button[type=submit]", f), async () => {
+    try { await api.signIn(email, pw); } catch (x) { $("#loginErr").textContent = errMsg(x); }
+  });
+});
+$("#forgot").addEventListener("click", () => {
+  modal({
+    title: "Redefinir senha",
+    body: `<p>Digite seu e-mail. Vamos enviar um link para você criar uma nova senha.</p>${field("email", "E-mail", "email", fv($("#loginForm"), "email"))}`,
+    actions: [{ label: "Cancelar", value: null }, {
+      label: "Enviar link", cls: "primary", primary: true, run: async f => {
+        const em = fv(f, "email"); if (!em) throw { friendly: "Digite seu e-mail." };
+        await api.resetPassword(em);
+        toast(MODE === "demo" ? "No modo demonstração nenhum e-mail é enviado." : "Pronto! Confira sua caixa de entrada (e o spam).");
+      }
+    }]
+  });
+});
+$("#setupForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, name = fv(f, "name"), email = fv(f, "email"), pw = f.elements.password.value;
+  $("#setupErr").textContent = "";
+  if (!name || !email || pw.length < 6) return $("#setupErr").textContent = "Preencha nome, e-mail e uma senha com pelo menos 6 caracteres.";
+  await busy($("button[type=submit]", f), async () => {
+    try { await api.setupFirstAdmin({ name, email, password: pw }); } catch (x) { $("#setupErr").textContent = errMsg(x); }
+  });
+});
+
+let entered = false;
+function enterApp() {
+  show("app");
+  if (entered) return;
+  entered = true;
+  $$("#tabs button").forEach(b => b.onclick = () => { location.hash = "#" + b.dataset.tab; });
+  addEventListener("hashchange", onHash);
+  addEventListener("beforeunload", e => { if (st.uploading || st.dirty) { e.preventDefault(); e.returnValue = ""; } });
+  route();
+}
+
+let lastHash = location.hash;
+async function onHash() {
+  const nextTab = (location.hash.replace(/^#\/?/, "").split("/")[0]) || "fotos";
+  if (st.dirty && st.tab === "textos" && nextTab !== "textos") {
+    const r = await modal({
+      title: "Salvar alterações?", body: "<p>Você alterou textos do site e ainda não salvou.</p>",
+      actions: [{ label: "Descartar", value: "discard" }, { label: "Salvar", cls: "primary", primary: true, value: "save" }]
+    });
+    if (r === null) { history.replaceState(null, "", lastHash || "#textos"); return; }
+    if (r === "save") { try { await saveTextos(); } catch (e) { toast(errMsg(e), "bad"); history.replaceState(null, "", "#textos"); return; } }
+    st.dirty = false;
+  }
+  lastHash = location.hash;
+  route();
+}
+
+function route() {
+  if (!api.me()) return;
+  const [tab = "fotos", sub] = location.hash.replace(/^#\/?/, "").split("/");
+  const t = ["fotos", "textos", "acessos", "conta"].includes(tab) ? tab : "fotos";
+  st.tab = t; st.token++;
+  st.sortables.forEach(s => s.destroy()); st.sortables = [];
+  $("#savebar")?.remove(); $("#selbar")?.remove();
+  st.selecting = false; st.sel.clear();
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  window.scrollTo(0, 0);
+  if (t === "fotos") sub ? viewAlbum(decodeURIComponent(sub)) : viewAlbums();
+  else if (t === "textos") viewTextos();
+  else if (t === "acessos") viewAcessos();
+  else viewConta();
+}
+const loading = () => { content.innerHTML = '<div style="display:grid;place-items:center;min-height:40vh"><i class="spin"></i></div>'; };
+const failView = e => { console.error(e); content.innerHTML = `<div class="emptybox"><p>${esc(errMsg(e))}</p><button class="btn" onclick="location.reload()">Tentar de novo</button></div>`; };
+
+/* =============================== FOTOS: categorias =============================== */
+const GROUP_ORDER = ["portfolio", "maquiagem", "penteados"];
+
+async function viewAlbums() {
+  const tk = st.token; loading();
+  try { st.albums = await api.loadAlbums(); } catch (e) { return failView(e); }
+  if (tk !== st.token) return;
+  const item = (a, drag) => `<li class="album" data-id="${esc(a.id)}">
+      ${drag ? `<span class="handle" aria-label="Arraste para mudar a ordem">${IC.grip}</span>` : '<span class="handle"></span>'}
+      <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}">${a.coverThumb ? "" : IC.img}</span>
+      <span class="meta"><b>${esc(a.title)}</b><small>${plural(a.count || 0, "foto", "fotos")}</small></span>${IC.chev}</li>`;
+  content.innerHTML = `
+    <h2 class="title">Fotos do site</h2>
+    <p class="help">Toque em uma categoria para adicionar, apagar ou mudar a ordem das fotos. Arraste pelos pontinhos <b>⋮⋮</b> para mudar a ordem das categorias.</p>
+    ${GROUP_ORDER.map(g => {
+      const list = st.albums.filter(a => a.group === g);
+      if (g === "portfolio") return `<h3 class="group">Portfólio</h3><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
+      return `<h3 class="group">${GROUPS[g].label}</h3>
+        <ul class="albums" data-group="${g}">${list.map(a => item(a, true)).join("")}</ul>
+        <button class="btn sm addalbum" data-add="${g}">${IC.plus} Nova categoria em ${GROUPS[g].label}</button>`;
+    }).join("")}`;
+  content.onclick = e => {
+    const add = e.target.closest("[data-add]");
+    if (add) return newAlbum(add.dataset.add);
+    const li = e.target.closest(".album");
+    if (li && !e.target.closest(".handle")) location.hash = "#fotos/" + encodeURIComponent(li.dataset.id);
+  };
+  $$("ul[data-group]").forEach(ul => st.sortables.push(Sortable.create(ul, {
+    handle: ".handle", animation: 180, ghostClass: "sortable-ghost", chosenClass: "sortable-chosen",
+    onEnd: async ev => {
+      if (ev.oldIndex === ev.newIndex) return;
+      const ids = $$("ul.albums li").map(li => li.dataset.id);
+      const list = ids.map(id => st.albums.find(a => a.id === id));
+      try { await api.reorderAlbums(list); list.forEach((a, i) => a.order = i); toast("Ordem salva"); }
+      catch (x) { toast(errMsg(x), "bad"); viewAlbums(); }
+    }
+  })));
+}
+
+function slugify(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "categoria";
+}
+function uniqueId(title) {
+  const base = slugify(title); let id = base, n = 2;
+  while (st.albums.some(a => a.id === id) || ["portfolio", "maquiagem", "penteados"].includes(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+async function newAlbum(group) {
+  const id = await modal({
+    title: `Nova categoria em ${GROUPS[group].label}`,
+    body: field("title", "Nome", "text", "", "Ex.: Madrinhas", 'maxlength="40"') +
+      field("subtitle", "Subtítulo (aparece no botão)", "text", "", "Ex.: Para as madrinhas do grande dia", 'maxlength="70"') +
+      field("description", "Descrição (aparece acima das fotos)", "textarea"),
+    actions: [{ label: "Cancelar", value: null }, {
+      label: "Criar", cls: "primary", primary: true, run: async f => {
+        const title = fv(f, "title"); if (!title) throw { friendly: "Dê um nome para a categoria." };
+        const a = {
+          id: uniqueId(title), group, title, subtitle: fv(f, "subtitle"), description: fv(f, "description"),
+          order: Math.max(0, ...st.albums.map(x => x.order || 0)) + 1, count: 0, coverThumb: "", coverPhotoId: ""
+        };
+        await api.saveAlbum(a); st.albums.push(a);
+        return a.id;
+      }
+    }]
+  });
+  if (id) { toast("Categoria criada. Agora adicione as fotos!"); location.hash = "#fotos/" + encodeURIComponent(id); }
+}
+
+async function editAlbum(a) {
+  const isPf = a.group === "portfolio";
+  const r = await modal({
+    title: "Editar categoria",
+    body: field("title", "Nome", "text", a.title, "", 'maxlength="40"') +
+      (isPf ? `<p class="hint" style="margin-top:-6px">O texto de introdução do Portfólio é editado na aba Textos.</p>` :
+        field("subtitle", "Subtítulo (aparece no botão)", "text", a.subtitle, "", 'maxlength="70"') +
+        field("description", "Descrição (aparece acima das fotos)", "textarea", a.description)) +
+      (isPf ? "" : `<button type="button" class="btn danger block" data-del style="margin:6px 0 4px">${IC.trash} Apagar esta categoria</button>`),
+    actions: [{ label: "Cancelar", value: null }, {
+      label: "Salvar", cls: "primary", primary: true, run: async f => {
+        const title = fv(f, "title"); if (!title) throw { friendly: "O nome não pode ficar vazio." };
+        const patch = { id: a.id, title };
+        if (!isPf) { patch.subtitle = fv(f, "subtitle"); patch.description = fv(f, "description"); }
+        await api.saveAlbum(patch); Object.assign(a, patch);
+        return "saved";
+      }
+    }],
+    onMount(ov, close) { const d = $("[data-del]", ov); if (d) d.onclick = () => close("delete"); }
+  });
+  if (r === "saved") { toast("Categoria atualizada"); renderAlbum(a); }
+  if (r === "delete") {
+    const n = st.photos.length;
+    const ok = await confirmBox("Apagar categoria?", `A categoria <b>${esc(a.title)}</b>${n ? ` e ${plural(n, "foto", "fotos")}` : ""} vão sair do site. Isso não pode ser desfeito.`, "Apagar", true);
+    if (!ok) return;
+    try { loading(); await api.deleteAlbum(a.id); toast("Categoria apagada"); location.hash = "#fotos"; }
+    catch (e) { toast(errMsg(e), "bad"); renderAlbum(a); }
+  }
+}
+
+/* =============================== FOTOS: dentro da categoria =============================== */
+let current = null, dragging = false;
+
+async function viewAlbum(id) {
+  const tk = st.token; loading();
+  try {
+    if (!st.albums.length) st.albums = await api.loadAlbums();
+    current = st.albums.find(a => a.id === id);
+    if (!current) { location.replace("#fotos"); return; }
+    st.photos = await api.loadPhotos(id);
+  } catch (e) { return failView(e); }
+  if (tk !== st.token) return;
+  if ((current.count || 0) !== st.photos.length) {     // corrige o contador, se preciso
+    current.count = st.photos.length;
+    api.saveAlbum({ id: current.id, count: current.count }).catch(() => { });
+  }
+  renderAlbum(current);
+}
+
+const tileHtml = (p, i, a) => `<div class="tile" data-id="${esc(p.id)}">
+  <img src="${esc(p.thumbUrl || p.thumb)}" alt="" loading="lazy">
+  ${i === 0 ? '<span class="tag">Destaque</span>' : ""}
+  ${a.group !== "portfolio" && a.coverPhotoId === p.id ? '<span class="tag cv">Capa</span>' : ""}
+  <span class="num">${i + 1}</span>
+  <button class="del" type="button" aria-label="Apagar foto">${IC.trash}</button></div>`;
+
+function renderAlbum(a) {
+  if (st.tab !== "fotos" || current !== a) return;
+  st.sortables.forEach(s => s.destroy()); st.sortables = [];
+  $("#selbar")?.remove(); st.selecting = false; st.sel.clear();
+  const n = st.photos.length;
+  const siteUrl = a.group === "portfolio" ? "../#/portfolio" : `../#/${a.group}/${encodeURIComponent(a.id)}`;
+  content.innerHTML = `
+    <button class="backbtn" data-act="back">${IC.back} Todas as categorias</button>
+    <div class="ahead">
+      <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}"></span>
+      <div class="grow"><h2 class="title">${esc(a.title)}</h2><p>${GROUPS[a.group]?.label || ""} · ${plural(n, "foto", "fotos")}</p></div>
+      <button class="iconbtn" data-act="edit" aria-label="Editar categoria" title="Editar nome e textos">${IC.edit}</button>
+    </div>
+    <div class="toolbar">
+      <span class="btn gold upl">${IC.plus} Adicionar fotos<input type="file" accept="image/*" multiple id="fileIn" aria-label="Escolher fotos"></span>
+      ${n > 1 ? `<button class="btn" data-act="select">${IC.check} Selecionar</button>` : ""}
+      <a class="btn" href="${siteUrl}" target="_blank" rel="noopener">${IC.ext} Ver no site</a>
+    </div>
+    ${n ? `<p class="help">Arraste uma foto para mudar a ordem${matchMedia("(hover:hover)").matches ? "" : " (toque e segure)"}. A <b>primeira</b> aparece em destaque no site. Toque numa foto para mais opções.</p>
+      <div class="pgrid" id="grid">${st.photos.map((p, i) => tileHtml(p, i, a)).join("")}</div>`
+      : `<div class="emptybox" id="emptybox">${IC.img}<p>Nenhuma foto nesta categoria ainda.<br>Toque em <b>Adicionar fotos</b> para escolher do celular ou do computador.</p></div><div class="pgrid" id="grid"></div>`}`;
+
+  content.onclick = e => {
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "back") return (location.hash = "#fotos");
+    if (act === "edit") return editAlbum(a);
+    if (act === "select") return toggleSelect(true);
+    const tile = e.target.closest(".tile:not(.up)");
+    if (!tile || dragging) return;
+    const p = st.photos.find(x => x.id === tile.dataset.id);
+    if (!p) return;
+    if (st.uploading) return toast("Aguarde o envio das fotos terminar.", "bad");
+    if (st.selecting) {
+      st.sel.has(p.id) ? st.sel.delete(p.id) : st.sel.add(p.id);
+      tile.classList.toggle("sel"); updateSelbar(); return;
+    }
+    if (e.target.closest(".del")) return deletePhotos([p]);
+    photoMenu(p);
+  };
+  $("#fileIn").onchange = e => { const files = [...e.target.files]; e.target.value = ""; uploadFiles(files, a); };
+
+  const grid = $("#grid");
+  if (n > 1) st.sortables.push(Sortable.create(grid, {
+    animation: 180, delay: 220, delayOnTouchOnly: true, touchStartThreshold: 8,
+    draggable: ".tile:not(.up)", ghostClass: "sortable-ghost", chosenClass: "sortable-chosen",
+    onStart: () => { dragging = true; },
+    onEnd: async ev => {
+      setTimeout(() => dragging = false, 80);
+      if (ev.oldIndex === ev.newIndex) return;
+      const ids = $$(".tile[data-id]", grid).map(t => t.dataset.id);
+      st.photos = ids.map(id => st.photos.find(p => p.id === id)).filter(Boolean);
+      await saveOrder(a);
+    }
+  }));
+}
+
+async function saveOrder(a) {
+  try { await api.reorderPhotos(st.photos); st.photos.forEach((p, i) => p.order = i); toast("Ordem salva"); }
+  catch (e) { toast(errMsg(e), "bad"); }
+  renderAlbum(a);
+}
+
+function toggleSelect(on) {
+  st.selecting = on; st.sel.clear();
+  $("#grid")?.classList.toggle("selecting", on);
+  $$(".tile.sel").forEach(t => t.classList.remove("sel"));
+  st.sortables.forEach(s => s.option("disabled", on));
+  $("#selbar")?.remove();
+  if (!on) return;
+  const bar = document.createElement("div");
+  bar.className = "selbar"; bar.id = "selbar";
+  bar.innerHTML = `<span id="selN">Toque nas fotos</span><button class="btn sm danger solid" id="selDel" disabled>${IC.trash} Apagar</button><button class="btn sm" id="selX">Cancelar</button>`;
+  document.body.appendChild(bar);
+  $("#selX").onclick = () => toggleSelect(false);
+  $("#selDel").onclick = () => deletePhotos(st.photos.filter(p => st.sel.has(p.id)));
+}
+function updateSelbar() {
+  const n = st.sel.size;
+  $("#selN").textContent = n ? plural(n, "selecionada", "selecionadas") : "Toque nas fotos";
+  $("#selDel").disabled = !n;
+}
+
+async function photoMenu(p) {
+  const a = current, i = st.photos.indexOf(p);
+  const opts = [];
+  if (a.group !== "portfolio" && a.coverPhotoId !== p.id) opts.push({ label: "Usar como capa da categoria", icon: IC.cover, value: "cover" });
+  if (i > 0) opts.push({ label: "Mover para o início (destaque)", icon: IC.up, value: "first" });
+  if (i < st.photos.length - 1) opts.push({ label: "Mover para o fim", icon: IC.down, value: "last" });
+  opts.push({ label: "Ajustar enquadramento / cortar", icon: IC.crop, value: "crop" });
+  opts.push({ label: "Ver foto inteira", icon: IC.zoom, value: "view" });
+  opts.push({ label: "Mover para outra categoria", icon: IC.move, value: "move" });
+  opts.push({ label: "Apagar foto", icon: IC.trash, value: "delete", cls: "red" });
+  const v = await sheet(p.thumbUrl || p.thumb, opts);
+  try {
+    if (v === "cover") { await setCover(a, p); toast("Capa atualizada"); renderAlbum(a); }
+    if (v === "first" || v === "last") {
+      st.photos.splice(i, 1);
+      v === "first" ? st.photos.unshift(p) : st.photos.push(p);
+      await saveOrder(a);
+    }
+    if (v === "crop") await cropPhoto(p, a);
+    if (v === "view") viewFull(p);
+    if (v === "move") movePhoto(p);
+    if (v === "delete") deletePhotos([p]);
+  } catch (e) { toast(errMsg(e), "bad"); }
+}
+
+async function openCropModal(src, ratio = 4 / 5, title = "Ajustar enquadramento") {
+  let img = await loadImage(src);
+  let z = 1, nx = 0, ny = 0;
+  function clamp() {
+    const iw0 = img.naturalWidth || img.width, ih0 = img.naturalHeight || img.height;
+    const s = Math.max(ratio / iw0, 1 / ih0) * z;
+    const iw = iw0 * s, ih = ih0 * s;
+    const mx = Math.max(0, (iw - ratio) / 2) / ratio, my = Math.max(0, (ih - 1) / 2);
+    nx = Math.max(-mx, Math.min(mx, nx)); ny = Math.max(-my, Math.min(my, ny));
+  }
+  function paint(c, w, h) {
+    const iw0 = img.naturalWidth || img.width, ih0 = img.naturalHeight || img.height;
+    c.fillStyle = "#332E29"; c.fillRect(0, 0, w, h);
+    const s = Math.max(w / iw0, h / ih0) * z;
+    const iw = iw0 * s, ih = ih0 * s;
+    c.imageSmoothingQuality = "high";
+    c.drawImage(img, w / 2 + nx * w - iw / 2, h / 2 + ny * h - ih / 2, iw, ih);
+  }
+  try {
+    return await modal({
+      title,
+      body: `<p style="margin-top:-4px">Arraste a foto para posicionar e use o zoom para aproximar.</p>
+        <div class="crop-stage" id="cStage"><canvas id="cCv"></canvas><div class="grid"></div></div>
+        <div class="crop-bar"><span style="font-size:.76rem;color:var(--muted)">Zoom</span><input type="range" id="cZoom" min="1" max="4" step="0.01" value="1"></div>
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <button type="button" class="btn sm" id="cRot">${IC.rot} Girar</button>
+          <button type="button" class="btn sm" id="cReset">Centralizar</button>
+        </div>`,
+      actions: [{ label: "Cancelar", value: null }, {
+        label: "Salvar ajuste", cls: "primary", primary: true, run: async () => {
+          const long = 1600;
+          const w = ratio >= 1 ? long : Math.round(long * ratio);
+          const h = ratio >= 1 ? Math.round(long / ratio) : long;
+          const out = document.createElement("canvas");
+          out.width = w; out.height = h;
+          paint(out.getContext("2d"), w, h);
+          return out;
+        }
+      }],
+      onMount(ov) {
+        const stage = $("#cStage", ov), cv = $("#cCv", ov), ctx = cv.getContext("2d"), zoom = $("#cZoom", ov);
+        function size() {
+          const maxH = Math.min(window.innerHeight * 0.44, 360);
+          const w = Math.min(stage.parentElement.clientWidth || 320, maxH * ratio);
+          stage.style.width = w + "px"; stage.style.aspectRatio = String(ratio);
+          const d = window.devicePixelRatio || 1;
+          cv.width = Math.round(w * d); cv.height = Math.round((w / ratio) * d);
+          paint(ctx, cv.width, cv.height);
+        }
+        setTimeout(size, 20);
+        zoom.oninput = () => { z = +zoom.value; clamp(); paint(ctx, cv.width, cv.height); };
+        $("#cReset", ov).onclick = () => { z = 1; nx = 0; ny = 0; zoom.value = 1; paint(ctx, cv.width, cv.height); };
+        $("#cRot", ov).onclick = () => {
+          const iw0 = img.naturalWidth || img.width, ih0 = img.naturalHeight || img.height;
+          const c = document.createElement("canvas"); c.width = ih0; c.height = iw0;
+          const x = c.getContext("2d"); x.translate(c.width / 2, c.height / 2); x.rotate(Math.PI / 2); x.drawImage(img, -iw0 / 2, -ih0 / 2);
+          img = c; nx = 0; ny = 0; clamp(); paint(ctx, cv.width, cv.height);
+        };
+        const pts = new Map(); let pinch = null;
+        stage.addEventListener("pointerdown", e => {
+          stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          stage.classList.add("drag");
+          if (pts.size === 2) { const a = [...pts.values()]; pinch = { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), z }; }
+        });
+        stage.addEventListener("pointermove", e => {
+          if (!pts.has(e.pointerId)) return;
+          const p = pts.get(e.pointerId), dx = e.clientX - p.x, dy = e.clientY - p.y;
+          pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pts.size === 2 && pinch) {
+            const a = [...pts.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+            z = Math.max(1, Math.min(4, pinch.z * d / pinch.d)); zoom.value = z;
+          } else {
+            nx += dx / (stage.clientWidth || 1); ny += dy / (stage.clientHeight || 1);
+          }
+          clamp(); paint(ctx, cv.width, cv.height);
+        });
+        const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) stage.classList.remove("drag"); };
+        stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
+        stage.addEventListener("wheel", e => {
+          e.preventDefault(); z = Math.max(1, Math.min(4, z * (e.deltaY < 0 ? 1.06 : 1 / 1.06))); zoom.value = z; clamp(); paint(ctx, cv.width, cv.height);
+        }, { passive: false });
+      }
+    });
+  } finally {
+    if (src instanceof Blob && img && img.src) URL.revokeObjectURL(img.src);
+  }
+}
+
+async function cropPhoto(p, a) {
+  const fullSrc = await api.getFull(p);
+  const canvas = await openCropModal(fullSrc, 4 / 5, "Ajustar foto");
+  if (!canvas) return;
+  const full = await compressCanvas(canvas, 1600, 680 * 1024, 0.85);
+  const thumb = await compressCanvas(canvas, 900, 150 * 1024, 0.8);
+  const updated = await api.updatePhoto(p.id, { thumb: thumb.blob, full: full.blob, w: full.w, h: full.h });
+  Object.assign(p, updated);
+  if (a.coverPhotoId === p.id) await setCover(a, p);
+  toast("Foto ajustada");
+  renderAlbum(a);
+}
+
+async function viewFull(p) {
+  modal({
+    sheet: true,
+    body: `<img class="pvimg" style="max-height:78vh" src="${esc(p.thumbUrl || p.thumb)}" alt=""><button type="button" class="opt cancel">Fechar</button>`,
+    onMount(ov, close) {
+      $(".cancel", ov).onclick = () => close();
+      api.getFull(p).then(src => { const im = $(".pvimg", ov); if (im && src) im.src = src; }).catch(() => { });
+    }
+  });
+}
+
+async function setCover(a, p) {
+  const coverThumb = p.thumbUrl ? p.thumbUrl : await blobToDataURL(await makeCover(p.thumb));
+  await api.saveAlbum({ id: a.id, coverThumb, coverPhotoId: p.id });
+  a.coverThumb = coverThumb; a.coverPhotoId = p.id;
+}
+async function fixCover(a) {
+  if (a.group === "portfolio") return;
+  if (a.coverPhotoId && st.photos.some(p => p.id === a.coverPhotoId)) return;
+  if (st.photos.length) await setCover(a, st.photos[0]);
+  else if (a.coverThumb || a.coverPhotoId) { await api.saveAlbum({ id: a.id, coverThumb: "", coverPhotoId: "" }); a.coverThumb = ""; a.coverPhotoId = ""; }
+}
+
+async function deletePhotos(list) {
+  if (!list.length) return;
+  const a = current;
+  const ok = await confirmBox(list.length === 1 ? "Apagar foto?" : `Apagar ${list.length} fotos?`,
+    `${list.length === 1 ? "A foto sai" : "As fotos saem"} do site na hora. Isso não pode ser desfeito.`, "Apagar", true);
+  if (!ok) return;
+  try {
+    await api.deletePhotos(list);
+    const ids = new Set(list.map(p => p.id));
+    st.photos = st.photos.filter(p => !ids.has(p.id));
+    a.count = st.photos.length;
+    await fixCover(a);
+    toast(list.length === 1 ? "Foto apagada" : `${list.length} fotos apagadas`);
+  } catch (e) { toast(errMsg(e), "bad"); }
+  renderAlbum(a);
+}
+
+async function movePhoto(p) {
+  const a = current;
+  const others = st.albums.filter(x => x.id !== a.id);
+  const to = await modal({
+    title: "Mover para…",
+    body: `<label>Categoria de destino<select name="to">${GROUP_ORDER.map(g => {
+      const opts = others.filter(x => x.group === g);
+      return opts.length ? `<optgroup label="${esc(GROUPS[g].label)}">${opts.map(x => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</optgroup>` : "";
+    }).join("")}</select></label>`,
+    actions: [{ label: "Cancelar", value: null }, { label: "Mover", cls: "primary", primary: true, run: async f => f.elements.to.value }]
+  });
+  if (!to) return;
+  const dest = st.albums.find(x => x.id === to);
+  try {
+    await api.movePhoto(p, to, Math.floor(Date.now() / 1000));
+    st.photos = st.photos.filter(x => x.id !== p.id);
+    a.count = st.photos.length; dest.count = (dest.count || 0) + 1;
+    await fixCover(a);
+    if (dest.group !== "portfolio" && !dest.coverPhotoId) {
+      const saved = st.photos; st.photos = [p];
+      await setCover(dest, p); st.photos = saved;
+    }
+    toast(`Foto movida para ${dest.title}`);
+  } catch (e) { toast(errMsg(e), "bad"); }
+  renderAlbum(a);
+}
+
+async function uploadFiles(files, a) {
+  files = files.filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+  if (!files.length) return;
+  $("#emptybox")?.remove();
+  const grid = $("#grid");
+  if (st.selecting) toggleSelect(false);
+  st.sortables.forEach(s => s.option("disabled", true));
+  st.uploading++;
+  const tiles = files.map(f => {
+    const t = document.createElement("div");
+    t.className = "tile up";
+    const url = URL.createObjectURL(f);
+    t.innerHTML = `<img src="${url}" alt=""><i class="spin"></i><span class="st">Aguardando…</span>`;
+    grid.appendChild(t);
+    return t;
+  });
+  tiles[0].scrollIntoView({ behavior: "smooth", block: "center" });
+  let order = st.photos.length ? Math.max(...st.photos.map(p => p.order || 0)) + 1 : 0;
+  let ok = 0; const errors = [];
+  for (let i = 0; i < files.length; i++) {
+    const t = tiles[i], label = $(".st", t);
+    label.textContent = `Preparando ${i + 1}/${files.length}…`;
+    try {
+      const r = await processPhoto(files[i]);
+      label.textContent = `Enviando ${i + 1}/${files.length}…`;
+      const p = await api.addPhoto(a.id, r, order++);
+      st.photos.push(p); ok++;
+      label.textContent = "Pronto ✓"; $(".spin", t)?.remove();
+    } catch (e) {
+      console.error(e);
+      t.classList.add("bad"); $(".spin", t)?.remove(); label.textContent = "Não enviada";
+      errors.push(`${files[i].name}: ${errMsg(e)}`);
+    }
+    URL.revokeObjectURL($("img", t).src);
+  }
+  st.uploading--;
+  a.count = st.photos.length;
+  try { await fixCover(a); } catch (e) { console.error(e); }
+  if (ok) toast(ok === 1 ? "1 foto adicionada ao site" : `${ok} fotos adicionadas ao site`);
+  if (errors.length) modal({
+    title: "Algumas fotos não foram enviadas",
+    body: `<p>${errors.map(esc).join("<br>")}</p>`,
+    actions: [{ label: "Entendi", cls: "primary", primary: true, value: true }]
+  });
+  renderAlbum(a);
+}
+
+/* =============================== TEXTOS =============================== */
+let media = {};
+async function viewTextos() {
+  const tk = st.token; loading();
+  let c;
+  try { [c, media] = await Promise.all([api.loadContent(), api.loadMedia()]); } catch (e) { return failView(e); }
+  if (tk !== st.token) return;
+  st.dirty = false;
+  content.innerHTML = `
+    <h2 class="title">Textos e informações</h2>
+    <p class="help">Altere o que quiser e toque em <b>Salvar</b>. As mudanças aparecem no site na hora.</p>
+    <details class="panel" open><summary>Fotos fixas do site</summary><div class="body">
+      ${imgField("hero", "Foto da capa", "Use uma foto vertical com o rosto do lado direito — o nome aparece à esquerda.")}
+      ${imgField("about", "Foto do “Sobre”", "Aparece ao lado do texto de apresentação.")}
+    </div></details>
+    <form id="txtForm" novalidate>
+    ${CONTENT_FORM.map((sec, i) => `<details class="panel" ${i === 0 ? "open" : ""}><summary>${esc(sec.title)}</summary><div class="body">
+      ${sec.fields.map(([k, label, type, hint]) => field(k, label, type, c[k], hint || "")).join("")}
+    </div></details>`).join("")}
+    </form>`;
+  const form = $("#txtForm");
+  form.addEventListener("input", () => { if (!st.dirty) { st.dirty = true; showSavebar(); } });
+  form.addEventListener("submit", e => e.preventDefault());
+  bindImgFields();
+}
+function imgField(key, title, hint) {
+  const src = media[key] || (key === "hero" ? "../imagens/capa.jpg" : "");
+  return `<div class="imgfield" data-key="${key}">
+    <span class="pv ${key === "about" ? "ab" : ""}" style="${src ? `background-image:url('${esc(src)}')` : ""}"></span>
+    <div><b>${esc(title)}</b><span class="hint">${esc(hint)}</span>
+      <div class="acts"><span class="btn sm upl" style="position:relative;overflow:hidden">Trocar foto<input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></span>
+      ${media[key] ? `<button type="button" class="btn sm danger" data-reset>${key === "hero" ? "Voltar à original" : "Remover"}</button>` : ""}</div></div></div>`;
+}
+function bindImgFields() {
+  $$(".imgfield").forEach(box => {
+    const key = box.dataset.key;
+    $("input[type=file]", box).onchange = async e => {
+      const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+      const btn = $(".upl", box);
+      try {
+        const ratio = key === "hero" ? 2 / 3 : 3 / 4;
+        const canvas = await openCropModal(f, ratio, key === "hero" ? "Enquadrar foto da capa" : "Enquadrar foto do Sobre");
+        if (!canvas) return;
+        await busy(btn, async () => {
+          const maxB = key === "hero" ? 420 * 1024 : 200 * 1024;
+          const { blob } = await compressCanvas(canvas, key === "hero" ? 1536 : 1200, maxB, 0.85);
+          const url = await blobToDataURL(blob);
+          await api.saveMedia(key, url); media[key] = url;
+          toast("Foto atualizada no site");
+          box.outerHTML = imgField(key, $("b", box).textContent, $(".hint", box).textContent);
+          bindImgFields();
+        });
+      } catch (x) { toast(errMsg(x), "bad"); }
+    };
+    const r = $("[data-reset]", box);
+    if (r) r.onclick = async () => {
+      if (!(await confirmBox("Remover foto?", key === "hero" ? "A capa volta a usar a foto original." : "O espaço da foto fica vazio no site.", "Remover", true))) return;
+      try {
+        await api.saveMedia(key, ""); media[key] = "";
+        toast("Pronto");
+        box.outerHTML = imgField(key, $("b", box).textContent, $(".hint", box).textContent);
+        bindImgFields();
+      } catch (x) { toast(errMsg(x), "bad"); }
+    };
+  });
+}
+function showSavebar() {
+  if ($("#savebar")) return;
+  const bar = document.createElement("div");
+  bar.className = "savebar"; bar.id = "savebar";
+  bar.innerHTML = `<span>Alterações não salvas</span><button class="btn primary" id="saveBtn">Salvar</button>`;
+  document.body.appendChild(bar);
+  $("#saveBtn").onclick = e => busy(e.currentTarget, async () => {
+    try { await saveTextos(); toast("Textos publicados no site"); } catch (x) { toast(errMsg(x), "bad"); }
+  });
+}
+async function saveTextos() {
+  const form = $("#txtForm"); if (!form) return;
+  const data = {};
+  CONTENT_FORM.forEach(sec => sec.fields.forEach(([k, , type]) => {
+    const el = form.elements[k];
+    data[k] = type === "checkbox" ? el.checked : el.value.trim();
+  }));
+  await api.saveContent(data);
+  st.dirty = false; $("#savebar")?.remove();
+}
+
+/* =============================== ACESSOS =============================== */
+async function viewAcessos() {
+  const tk = st.token; loading();
+  let list;
+  try { list = await api.listAdmins(); } catch (e) { return failView(e); }
+  if (tk !== st.token) return;
+  const me = api.me();
+  list.sort((a, b) => (b.owner ? 1 : 0) - (a.owner ? 1 : 0) || String(a.name).localeCompare(b.name));
+  content.innerHTML = `
+    <h2 class="title">Acessos ao painel</h2>
+    <p class="help">Pessoas que podem entrar no painel e editar o site.</p>
+    <ul class="users">${list.map(u => {
+      const off = u.active === false, isMe = u.uid === me.uid;
+      return `<li class="user ${off ? "off" : ""}" data-uid="${esc(u.uid)}" data-email="${esc(u.email)}">
+        <span class="av">${esc((u.name || u.email || "?").trim()[0].toUpperCase())}</span>
+        <div class="grow"><b>${esc(u.name || "—")}${u.owner ? '<span class="badge">Principal</span>' : ""}${isMe ? '<span class="badge">Você</span>' : ""}${off ? '<span class="badge off">Desativado</span>' : ""}</b><small>${esc(u.email)}</small></div>
+        <div class="acts">
+          ${!isMe ? `<button class="btn sm" data-act="reset">Redefinir senha</button>` : ""}
+          ${!u.owner && !isMe ? (off ? `<button class="btn sm" data-act="on">Reativar</button>` : `<button class="btn sm danger" data-act="off">Desativar</button>`) : ""}
+        </div></li>`;
+    }).join("")}</ul>
+    <div class="panel">
+      <h3 class="group" style="margin-top:0">Adicionar pessoa</h3>
+      <p class="help">A pessoa entra pelo mesmo endereço do painel, com o e-mail e a senha abaixo. Depois ela pode trocar a senha na aba <b>Conta</b>.</p>
+      <form id="newUser" novalidate>
+        ${field("name", "Nome", "text", "", "", 'autocomplete="off"')}
+        ${field("email", "E-mail", "email", "", "", 'autocomplete="off"')}
+        ${field("password", "Senha inicial (mínimo 6 caracteres)", "password", "", "", 'autocomplete="new-password"')}
+        <p class="err" id="nuErr"></p>
+        <button class="btn primary" type="submit">${IC.plus} Criar acesso</button>
+      </form>
+    </div>`;
+  bindEyes(content);
+  content.onclick = async e => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const li = b.closest(".user"), uid = li.dataset.uid, email = li.dataset.email, name = $("b", li).firstChild.textContent;
+    try {
+      if (b.dataset.act === "off") {
+        if (!(await confirmBox("Desativar acesso?", `<b>${esc(name)}</b> não vai mais conseguir entrar no painel. Você pode reativar depois.`, "Desativar", true))) return;
+        await busy(b, () => api.setAdminActive(uid, false)); toast("Acesso desativado"); viewAcessos();
+      }
+      if (b.dataset.act === "on") { await busy(b, () => api.setAdminActive(uid, true)); toast("Acesso reativado"); viewAcessos(); }
+      if (b.dataset.act === "reset") {
+        if (!(await confirmBox("Redefinir senha?", `Vamos enviar um e-mail para <b>${esc(email)}</b> com um link para criar uma nova senha.`, "Enviar e-mail"))) return;
+        await busy(b, () => api.resetPassword(email));
+        toast(MODE === "demo" ? "No modo demonstração nenhum e-mail é enviado." : "E-mail enviado");
+      }
+    } catch (x) { toast(errMsg(x), "bad"); }
+  };
+  $("#newUser").onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target, name = fv(f, "name"), email = fv(f, "email"), pw = f.elements.password.value;
+    $("#nuErr").textContent = "";
+    if (!name || !email) return $("#nuErr").textContent = "Preencha nome e e-mail.";
+    if (pw.length < 6) return $("#nuErr").textContent = "A senha precisa ter pelo menos 6 caracteres.";
+    await busy($("button[type=submit]", f), async () => {
+      try { await api.createAdmin({ name, email, password: pw }); toast(`Acesso criado para ${name}`); viewAcessos(); }
+      catch (x) {
+        $("#nuErr").textContent = (x.code || "").includes("email-already-in-use")
+          ? "Este e-mail já tem cadastro. Se a pessoa estiver na lista como desativada, use “Reativar”."
+          : errMsg(x);
+      }
+    });
+  };
+}
+
+/* =============================== CONTA =============================== */
+function viewConta() {
+  const me = api.me();
+  const panelUrl = location.href.split("#")[0];
+  content.innerHTML = `
+    <h2 class="title">Minha conta</h2>
+    <p class="help">Conectada como <b>${esc(me.email)}</b></p>
+    <form class="panel" id="nameForm" novalidate>
+      <h3 class="group" style="margin-top:0">Seu nome</h3>
+      ${field("name", "Nome", "text", me.name || "")}
+      <button class="btn" type="submit">Salvar nome</button>
+    </form>
+    <form class="panel" id="pwForm" novalidate>
+      <h3 class="group" style="margin-top:0">Trocar senha</h3>
+      ${field("cur", "Senha atual", "password", "", "", 'autocomplete="current-password"')}
+      ${field("nw", "Nova senha (mínimo 6 caracteres)", "password", "", "", 'autocomplete="new-password"')}
+      ${field("nw2", "Repita a nova senha", "password", "", "", 'autocomplete="new-password"')}
+      <p class="err" id="pwErr"></p>
+      <button class="btn primary" type="submit">Trocar senha</button>
+    </form>
+    <div class="panel">
+      <h3 class="group" style="margin-top:0">Como entrar no painel</h3>
+      <p class="help" style="margin-bottom:10px">O painel não aparece para as visitantes do site. Para entrar:</p>
+      <ul class="help" style="padding-left:18px;margin-top:0">
+        <li>Acesse <b>${esc(panelUrl)}</b> (salve nos favoritos do celular), ou</li>
+        <li>No site, toque <b>5 vezes seguidas</b> no texto “© Anna Lívia Makeup” no rodapé.</li>
+      </ul>
+      <button class="btn sm" id="copyUrl">Copiar endereço do painel</button>
+    </div>
+    <button class="btn danger block" id="logout" style="max-width:320px">Sair do painel</button>`;
+  bindEyes(content);
+  $("#nameForm").onsubmit = async e => {
+    e.preventDefault(); const name = fv(e.target, "name"); if (!name) return;
+    await busy($("button", e.target), async () => {
+      try { await api.updateMyName(name); toast("Nome atualizado"); } catch (x) { toast(errMsg(x), "bad"); }
+    });
+  };
+  $("#pwForm").onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target, cur = f.elements.cur.value, nw = f.elements.nw.value, nw2 = f.elements.nw2.value;
+    $("#pwErr").textContent = "";
+    if (!cur) return $("#pwErr").textContent = "Digite a senha atual.";
+    if (nw.length < 6) return $("#pwErr").textContent = "A nova senha precisa ter pelo menos 6 caracteres.";
+    if (nw !== nw2) return $("#pwErr").textContent = "As novas senhas não são iguais.";
+    await busy($("button[type=submit]", f), async () => {
+      try { await api.changePassword(cur, nw); f.reset(); toast("Senha alterada"); }
+      catch (x) { $("#pwErr").textContent = errMsg(x); }
+    });
+  };
+  $("#copyUrl").onclick = async () => {
+    try { await navigator.clipboard.writeText(panelUrl); toast("Endereço copiado"); }
+    catch (e) { prompt("Copie o endereço:", panelUrl); }
+  };
+  $("#logout").onclick = async () => {
+    if (!(await confirmBox("Sair do painel?", "Você vai precisar do e-mail e da senha para entrar de novo.", "Sair"))) return;
+    entered = false; removeEventListener("hashchange", onHash);
+    await api.signOut();
+    history.replaceState(null, "", location.pathname);
+  };
+}
+
+boot();

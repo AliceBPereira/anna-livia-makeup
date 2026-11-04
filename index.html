@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anna Lívia Makeup</title>
+<meta name="description" content="Anna Lívia Makeup: maquiagem de noivas, debutantes e eventos, e penteados em estúdio próprio. Agendamentos pelo WhatsApp.">
+<meta name="theme-color" content="#2A2622">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Anna Lívia Makeup">
+<meta property="og:description" content="Maquiagem de noivas, debutantes e eventos. Agendamentos pelo WhatsApp.">
+<meta property="og:image" content="imagens/capa.jpg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232A2622'/%3E%3Ctext x='32' y='43' font-family='Georgia,serif' font-size='30' text-anchor='middle' fill='%23C8A96A'%3EAL%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Allura&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Cormorant+SC:wght@300;400&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset=".5" stop-color="#E6C29A"/><stop offset="1" stop-color="#9c7650"/></linearGradient></defs></svg>
+
+<div class="shell is-home" id="shell">
+  <header class="hero" id="hero" aria-label="Anna Lívia Makeup">
+    <h1 class="c" data-t="brand">Anna Lívia</h1>
+    <span class="c mk" data-t="brandSub">MAKEUP</span>
+    <span class="rl" aria-hidden="true"></span>
+    <p class="c tg" data-t="tagline">Realce o que
+te faz única</p>
+    <div class="ft">
+      <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z"/></svg><span data-t="heroFeature1">Maquiagem para todas as ocasiões</span></div>
+      <i></i>
+      <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11z"/></svg><span data-t="heroFeature2">Beleza com técnica e autenticidade</span></div>
+      <i></i>
+      <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 19c-2.5-2-3.5-5-3.5-7.5S10 6 12 4.5c2 1.5 3.5 4.5 3.5 7S14.5 17 12 19z"/><path d="M12 19c-3 .3-7-1-9-5 2.5-.8 5-.5 6.5.5M12 19c3 .3 7-1 9-5-2.5-.8-5-.5-6.5.5"/></svg><span data-t="heroFeature3">Atendimento personalizado</span></div>
+    </div>
+    <p class="sg" data-t="heroSignature">Studio Anna Lívia Makeup</p>
+  </header>
+
+  <div class="main">
+    <div class="view" id="view"><div class="loading"><i></i></div></div>
+    <footer>
+      <div class="social" id="social"></div>
+      <span class="copy" id="copy">© <span id="year">2026</span> Anna Lívia Makeup</span>
+    </footer>
+  </div>
+</div>
+
+<div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Foto ampliada">
+  <figure><img id="lbImg" alt=""></figure>
+  <button class="x" id="lbX" aria-label="Fechar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <button class="pv" id="lbP" aria-label="Foto anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button class="nx" id="lbN" aria-label="Próxima foto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5l7 7-7 7"/></svg></button>
+  <div class="count" id="lbC"></div>
+</div>
+
+<script type="module" src="js/site.js"></script>
+</body>
+</html>

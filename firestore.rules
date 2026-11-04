@@ -1,0 +1,58 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Verifica se quem está logado está na lista de acessos ativos do painel
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
+    }
+
+    // Verifica se o primeiro acesso do painel já foi criado
+    function isSetupDone() {
+      return exists(/databases/$(database)/documents/meta/setup);
+    }
+
+    // Conteúdo público do site: qualquer visitante pode ler, só administradores editam
+    match /site/{doc} {
+      allow read: if true;
+      allow write: if isAdmin() || !isSetupDone();
+    }
+
+    match /albums/{albumId} {
+      allow read: if true;
+      allow write: if isAdmin() || !isSetupDone();
+    }
+
+    match /photos/{photoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /photoData/{photoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Marcação de que a configuração inicial já foi feita (criada uma única vez)
+    match /meta/setup {
+      allow read: if true;
+      allow create: if request.auth != null && !isSetupDone();
+      allow update, delete: if false;
+    }
+
+    // Lista de pessoas com acesso ao painel
+    match /admins/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      // Primeiro administrador (criado junto com /meta/setup) ou administrador ativo criando outro
+      allow create: if isAdmin()
+        || (request.auth != null && request.auth.uid == uid && !isSetupDone());
+      // Administradores ativos podem editar (não é permitido desativar o acesso principal)
+      allow update: if isAdmin()
+        && !(resource.data.owner == true && request.resource.data.active == false);
+      allow delete: if false;
+    }
+  }
+}
