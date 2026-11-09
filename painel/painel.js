@@ -614,10 +614,15 @@ async function viewAlbums() {
   loadedContent = c;
   let stagedHero = null;
 
-  const item = (a, drag) => `<li class="album" data-id="${esc(a.id)}">
+  const item = (a, drag) => {
+    const canDel = a.group === "maquiagem" || a.group === "penteados" || a.group === "pagina";
+    return `<li class="album" data-id="${esc(a.id)}">
       ${drag ? `<span class="handle" aria-label="Arraste para mudar a ordem">${IC.grip}</span>` : '<span class="handle"></span>'}
       <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}">${a.coverThumb ? "" : IC.img}</span>
-      <span class="meta"><b>${esc(a.title)}</b><small>${plural(a.count || 0, "foto", "fotos")}${a.subtitle ? " · " + esc(a.subtitle) : ""}</small></span>${IC.chev}</li>`;
+      <span class="meta"><b>${esc(a.title)}</b><small>${plural(a.count || 0, "foto", "fotos")}${a.subtitle ? " · " + esc(a.subtitle) : ""}</small></span>
+      ${canDel ? `<button type="button" class="btn sm danger" data-del-album="${esc(a.id)}" title="Excluir subcategoria" style="margin-right:4px">${IC.trash} Excluir</button>` : ""}
+      ${IC.chev}</li>`;
+  };
 
   function renderQuickHero() {
     const isStaged = stagedHero !== null;
@@ -753,10 +758,16 @@ async function viewAlbums() {
       return;
     }
     if (e.target.closest("[data-edit-estudio]")) return editEstudioTexts();
+    const delAlbBtn = e.target.closest("[data-del-album]");
+    if (delAlbBtn) {
+      const alb = st.albums.find(x => x.id === delAlbBtn.dataset.delAlbum);
+      if (alb) await confirmAndDeleteAlbum(alb, false);
+      return;
+    }
     const add = e.target.closest("[data-add]");
     if (add) return newAlbum(add.dataset.add);
     const li = e.target.closest(".album");
-    if (li && !e.target.closest(".handle")) location.hash = "#fotos/" + encodeURIComponent(li.dataset.id);
+    if (li && !e.target.closest(".handle") && !e.target.closest("button")) location.hash = "#fotos/" + encodeURIComponent(li.dataset.id);
   };
   $$("ul[data-group]").forEach(ul => st.sortables.push(Sortable.create(ul, {
     handle: ".handle", animation: 180, ghostClass: "sortable-ghost", chosenClass: "sortable-chosen",
@@ -827,6 +838,36 @@ async function newAlbum(group) {
   if (id) { toast("Categoria criada. Agora adicione as fotos!"); location.hash = "#fotos/" + encodeURIComponent(id); }
 }
 
+async function confirmAndDeleteAlbum(a, fromInside = false) {
+  const n = fromInside ? st.photos.length : (a.count || 0);
+  const ok = await confirmBox(
+    "Excluir subcategoria?",
+    `A subcategoria <b>${esc(a.title)}</b>${n ? ` e ${plural(n, "foto", "fotos")}` : ""} vão sair do site. (Se precisar, você pode recuperar pelo botão <b>Desfazer</b> no topo).`,
+    "Excluir subcategoria",
+    true
+  );
+  if (!ok) return;
+  try {
+    loading();
+    await recordUndo(`Excluir subcategoria ${a.title}`);
+    await api.deleteAlbum(a.id);
+    st.albums = st.albums.filter(x => x.id !== a.id);
+    if (a.group === "pagina" && loadedContent && Array.isArray(loadedContent.customRoutes)) {
+      const nextRoutes = loadedContent.customRoutes.filter(r => r && r.id !== a.id);
+      await api.saveContent({ customRoutes: nextRoutes });
+      loadedContent.customRoutes = nextRoutes;
+    }
+    localStorage.removeItem("alm-cache-v1");
+    toast(`Subcategoria “${a.title}” excluída`);
+    if (fromInside) location.hash = "#fotos";
+    else viewAlbums();
+  } catch (e) {
+    toast(errMsg(e), "bad");
+    if (fromInside) renderAlbum(a);
+    else viewAlbums();
+  }
+}
+
 async function editAlbum(a) {
   if (a.group === "estudio") return editEstudioTexts();
   if (a.group === "pagina") {
@@ -846,7 +887,7 @@ async function editAlbum(a) {
       (isPf ? `<p class="hint" style="margin-top:-6px">O texto de introdução do Portfólio é editado na aba Capa, Cores & Textos.</p>` :
         field("subtitle", "Subtítulo (aparece no botão)", "text", a.subtitle, "", 'maxlength="70"') +
         field("description", "Descrição (aparece acima das fotos)", "textarea", a.description)) +
-      (isPf ? "" : `<button type="button" class="btn danger block" data-del style="margin:6px 0 4px">${IC.trash} Apagar esta categoria</button>`),
+      (isPf ? "" : `<button type="button" class="btn danger block" data-del style="margin:6px 0 4px">${IC.trash} Excluir esta subcategoria</button>`),
     actions: [{ label: "Cancelar", value: null }, {
       label: "Salvar", cls: "primary", primary: true, run: async f => {
         const title = fv(f, "title"); if (!title) throw { friendly: "O nome não pode ficar vazio." };
@@ -860,13 +901,7 @@ async function editAlbum(a) {
     onMount(ov, close) { const d = $("[data-del]", ov); if (d) d.onclick = () => close("delete"); }
   });
   if (r === "saved") { toast("Categoria atualizada"); renderAlbum(a); }
-  if (r === "delete") {
-    const n = st.photos.length;
-    const ok = await confirmBox("Apagar categoria?", `A categoria <b>${esc(a.title)}</b>${n ? ` e ${plural(n, "foto", "fotos")}` : ""} vão sair do site. Isso não pode ser desfeito.`, "Apagar", true);
-    if (!ok) return;
-    try { loading(); await recordUndo(`Apagar categoria ${a.title}`); await api.deleteAlbum(a.id); localStorage.removeItem("alm-cache-v1"); toast("Categoria apagada"); location.hash = "#fotos"; }
-    catch (e) { toast(errMsg(e), "bad"); renderAlbum(a); }
-  }
+  if (r === "delete") await confirmAndDeleteAlbum(a, true);
 }
 
 /* =============================== FOTOS: dentro da categoria =============================== */
@@ -907,6 +942,7 @@ function renderAlbum(a) {
   st.sortables.forEach(s => s.destroy()); st.sortables = [];
   $("#selbar")?.remove(); st.selecting = false; st.sel.clear();
   const n = st.photos.length;
+  const canDel = a.group === "maquiagem" || a.group === "penteados" || a.group === "pagina";
   const siteUrl = a.group === "portfolio" ? "../#/portfolio" : (a.group === "estudio" ? "../#/estudio" : (a.group === "pagina" ? `../#/pagina/${encodeURIComponent(a.id)}` : `../#/${a.group}/${encodeURIComponent(a.id)}`));
   content.innerHTML = `
     <button class="backbtn" data-act="back">${IC.back} Todas as categorias</button>
@@ -916,6 +952,7 @@ function renderAlbum(a) {
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${a.coverThumb ? `<button class="btn sm danger" data-act="nocover" title="Deixar sem foto de capa">Desativar capa (deixar sem)</button>` : ""}
         <button class="btn sm" data-act="edit" title="Editar textos">${IC.edit} ${a.group === "estudio" ? "Editar textos do Estúdio" : "Editar textos"}</button>
+        ${canDel ? `<button class="btn sm danger" data-act="del-album" title="Excluir subcategoria">${IC.trash} Excluir subcategoria</button>` : ""}
       </div>
     </div>
     <div class="toolbar">
@@ -931,6 +968,7 @@ function renderAlbum(a) {
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "back") return (location.hash = "#fotos");
     if (act === "edit") return editAlbum(a);
+    if (act === "del-album") return confirmAndDeleteAlbum(a, true);
     if (act === "nocover") {
       try {
         await clearAlbumCover(a);
