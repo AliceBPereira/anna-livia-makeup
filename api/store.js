@@ -167,34 +167,128 @@ function verifyToken(tok) {
 }
 
 const memCache = {};
+const GH_TOKEN = process.env.GITHUB_TOKEN || "";
+const GH_REPO = process.env.GITHUB_REPO || "AliceBPereira/anna-livia-makeup";
+const GH_BRANCH = "site-data";
+
+function ghHeaders(extra = {}) {
+  const h = {
+    "User-Agent": "anna-livia-makeup-store",
+    "Accept": "application/vnd.github+json",
+    ...extra
+  };
+  if (GH_TOKEN) h["Authorization"] = `Bearer ${GH_TOKEN}`;
+  return h;
+}
+
+async function ghGetJson(filePath) {
+  if (!GH_TOKEN) return null;
+  const url = `https://api.github.com/repos/${GH_REPO}/contents/${filePath}?ref=${GH_BRANCH}`;
+  const r = await fetch(url, { headers: ghHeaders(), cache: "no-store" });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`GitHub read ${r.status}`);
+  const meta = await r.json();
+  if (meta && meta.content) {
+    const raw = Buffer.from(meta.content, "base64").toString("utf8");
+    return { data: JSON.parse(raw), sha: meta.sha };
+  }
+  if (meta && meta.download_url) {
+    const dl = await fetch(meta.download_url, { cache: "no-store" });
+    if (dl.ok) return { data: await dl.json(), sha: meta.sha };
+  }
+  return null;
+}
+
+async function ghPutFile(filePath, contentBuffer, message = "Atualizar dados do site") {
+  if (!GH_TOKEN) throw new Error("GITHUB_TOKEN não configurado.");
+  const url = `https://api.github.com/repos/${GH_REPO}/contents/${filePath}`;
+  let sha = undefined;
+  const check = await fetch(`${url}?ref=${GH_BRANCH}`, { headers: ghHeaders(), cache: "no-store" });
+  if (check.ok) {
+    const existing = await check.json();
+    sha = existing.sha;
+  }
+  const body = {
+    message,
+    content: contentBuffer.toString("base64"),
+    branch: GH_BRANCH
+  };
+  if (sha) body.sha = sha;
+  const putRes = await fetch(url, {
+    method: "PUT",
+    headers: ghHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body)
+  });
+  if (!putRes.ok) {
+    // Retry once on 409 conflict
+    if (putRes.status === 409) {
+      const retryCheck = await fetch(`${url}?ref=${GH_BRANCH}`, { headers: ghHeaders(), cache: "no-store" });
+      if (retryCheck.ok) {
+        const retryMeta = await retryCheck.json();
+        body.sha = retryMeta.sha;
+        const retryRes = await fetch(url, {
+          method: "PUT",
+          headers: ghHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(body)
+        });
+        if (retryRes.ok) return await retryRes.json();
+      }
+    }
+    const errTxt = await putRes.text().catch(() => "");
+    throw new Error(`Erro ao salvar no repositório (${putRes.status}): ${errTxt.slice(0, 120)}`);
+  }
+  return await putRes.json();
+}
+
+async function tryReadVercelBlob(prefix) {
+  try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
+    const { blobs } = await list({ prefix, limit: 10 });
+    if (!blobs || !blobs.length) return null;
+    blobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime() || b.pathname.localeCompare(a.pathname));
+    const r = await fetch(blobs[0].url, { cache: "no-store" });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
 
 async function readJsonBlob(prefix, fallback, forWrite = false) {
-  if (!forWrite && memCache[prefix] && (Date.now() - memCache[prefix].ts < 15000)) {
+  if (!forWrite && memCache[prefix] && (Date.now() - memCache[prefix].ts < 10000)) {
     return JSON.parse(JSON.stringify(memCache[prefix].data));
   }
   try {
-    const { blobs } = await list({ prefix, limit: 30 });
-    if (!blobs || !blobs.length) return fallback();
-    blobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime() || b.pathname.localeCompare(a.pathname));
-    const newest = blobs[0];
-    const r = await fetch(newest.url, { cache: "no-store" });
-    if (!r.ok) {
-      if (forWrite) throw new Error(`Armazenamento temporariamente indisponível (${r.status}).`);
-      if (memCache[prefix]) return JSON.parse(JSON.stringify(memCache[prefix].data));
-      return fallback();
+    const ghFile = `${prefix}.json`;
+    const ghRes = await ghGetJson(ghFile);
+    if (ghRes && ghRes.data) {
+      memCache[prefix] = { data: ghRes.data, ts: Date.now() };
+      return JSON.parse(JSON.stringify(ghRes.data));
     }
-    const data = await r.json();
-    memCache[prefix] = { data, ts: Date.now() };
-    return JSON.parse(JSON.stringify(data));
+    // Se ainda não existir no GitHub, tenta recuperar do Vercel Blob (caso esteja desbloqueado)
+    const blobData = await tryReadVercelBlob(prefix);
+    if (blobData) {
+      memCache[prefix] = { data: blobData, ts: Date.now() };
+      if (GH_TOKEN) {
+        await ghPutFile(ghFile, Buffer.from(JSON.stringify(blobData), "utf8"), `Migrar ${prefix}`).catch(() => {});
+      }
+      return JSON.parse(JSON.stringify(blobData));
+    }
+    return fallback();
   } catch (e) {
     console.error("readJsonBlob error:", e);
-    if (forWrite) throw e;
     if (memCache[prefix]) return JSON.parse(JSON.stringify(memCache[prefix].data));
+    if (forWrite) throw e;
     return fallback();
   }
 }
 
 async function writeJsonBlob(prefix, obj) {
+  memCache[prefix] = { data: obj, ts: Date.now() };
+  if (GH_TOKEN) {
+    await ghPutFile(`${prefix}.json`, Buffer.from(JSON.stringify(obj), "utf8"), `Atualizar ${prefix}`);
+    return;
+  }
   const { blobs } = await list({ prefix, limit: 30 }).catch(() => ({ blobs: [] }));
   const key = `${prefix}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}.json`;
   await put(key, JSON.stringify(obj), {
@@ -203,7 +297,6 @@ async function writeJsonBlob(prefix, obj) {
     contentType: "application/json",
     cacheControlMaxAge: 0
   });
-  memCache[prefix] = { data: obj, ts: Date.now() };
   if (blobs && blobs.length) {
     try { await del(blobs.map(b => b.url)); } catch (e) { console.warn("del old blobs:", e); }
   }
@@ -245,6 +338,11 @@ async function uploadDataUrl(pathPrefix, dataUrl) {
   const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl || "");
   if (!m) return dataUrl;
   const buf = Buffer.from(m[2], "base64");
+  if (GH_TOKEN) {
+    const fileName = `uploads/${pathPrefix}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}.jpg`;
+    await ghPutFile(fileName, buf, `Upload ${fileName}`);
+    return `https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}/${fileName}`;
+  }
   const blob = await put(`${pathPrefix}-${Date.now()}.jpg`, buf, {
     access: "public",
     addRandomSuffix: true,
@@ -289,7 +387,13 @@ module.exports = async (req, res) => {
       const tok = verifyToken((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
       let me = null;
       if (tok) {
-        const u = ad.admins.find(x => x.uid === tok.uid && x.active !== false);
+        let u = ad.admins.find(x => x.uid === tok.uid && x.active !== false);
+        if (!u && !ad.admins.length) {
+          u = { uid: tok.uid, name: "Anna Lívia", email: tok.email || "admin@annalivia.com", pwHash: "", active: true, owner: true, createdAt: Date.now() };
+          ad.setupDone = true;
+          ad.admins = [u];
+          await writeJsonBlob(ADMINS_PATH, ad).catch(() => {});
+        }
         if (u) me = { uid: u.uid, name: u.name, email: u.email, owner: u.owner, active: u.active };
       }
       return res.status(200).json({ setupDone: !!ad.setupDone, user: me });
@@ -327,7 +431,13 @@ module.exports = async (req, res) => {
     const tok = verifyToken((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
     if (!tok) return err(res, 401, "permission-denied", "Sessão expirada. Entre novamente.");
     const ad = await getAdmins();
-    const me = ad.admins.find(x => x.uid === tok.uid && x.active !== false);
+    let me = ad.admins.find(x => x.uid === tok.uid && x.active !== false);
+    if (!me && !ad.admins.length) {
+      me = { uid: tok.uid, name: "Anna Lívia", email: tok.email || "admin@annalivia.com", pwHash: "", active: true, owner: true, createdAt: Date.now() };
+      ad.setupDone = true;
+      ad.admins = [me];
+      await writeJsonBlob(ADMINS_PATH, ad).catch(() => {});
+    }
     if (!me) return err(res, 403, "permission-denied", "Sem permissão.");
 
     if (action === "listAdmins") {
@@ -444,10 +554,8 @@ module.exports = async (req, res) => {
 
     if (action === "addPhoto") {
       const pid = body.id || uid();
-      const [thumbUrl, fullUrl] = await Promise.all([
-        uploadDataUrl(`photos/${pid}-thumb`, body.thumb),
-        uploadDataUrl(`photos/${pid}-full`, body.full)
-      ]);
+      const thumbUrl = await uploadDataUrl(`photos/${pid}-thumb`, body.thumb);
+      const fullUrl = await uploadDataUrl(`photos/${pid}-full`, body.full);
       const photo = {
         id: pid,
         albumId: body.albumId,
@@ -475,10 +583,8 @@ module.exports = async (req, res) => {
     if (action === "updatePhoto") {
       const p = st.photos.find(x => x.id === body.id);
       if (!p) return err(res, 404, "not-found", "Foto não encontrada.");
-      const [thumbUrl, fullUrl] = await Promise.all([
-        uploadDataUrl(`photos/${p.id}-thumb`, body.thumb),
-        uploadDataUrl(`photos/${p.id}-full`, body.full)
-      ]);
+      const thumbUrl = await uploadDataUrl(`photos/${p.id}-thumb`, body.thumb);
+      const fullUrl = await uploadDataUrl(`photos/${p.id}-full`, body.full);
       p.thumbUrl = thumbUrl;
       p.fullUrl = fullUrl;
       p.w = body.w || p.w;
