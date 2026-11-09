@@ -41,6 +41,8 @@ const DEFAULT_CONTENT = {
   showEstudio: true,
   cardEstudioTitle: "O Estúdio",
   cardEstudio: "Conheça nosso ambiente, bancada e estrutura.",
+  coverEstudio: "",
+  coverEstudioPhotoId: "",
   showCursos: true,
   cardCursosTitle: "Cursos",
   cardCursos: "Aprenda a se maquiar com a Anna.",

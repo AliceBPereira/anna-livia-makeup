@@ -79,6 +79,7 @@ function pageHome() {
   const maqThumb = c.coverMaquiagem === "none" ? "" : (c.coverMaquiagem || S.albums.find(x => x.group === "maquiagem" && x.coverThumb)?.coverThumb || "");
   const pentThumb = c.coverPenteados === "none" ? "" : (c.coverPenteados || S.albums.find(x => x.group === "penteados" && x.coverThumb)?.coverThumb || "");
   const pfThumb = c.coverPortfolio === "none" ? "" : (c.coverPortfolio || pfAlbum?.coverThumb || "");
+  const estThumb = c.coverEstudio === "none" ? "" : (c.coverEstudio || estAlbum?.coverThumb || "");
   const activeCourses = getActiveCourses();
   const isCursosSoon = activeCourses.length === 0;
 
@@ -96,7 +97,7 @@ function pageHome() {
     cards.push(iconCard("c4", "#/portfolio", I.photo, c.cardPortfolioTitle || "Portfólio", c.cardPortfolio, "", pfThumb));
   }
   if (c.showEstudio !== false) {
-    cards.push(iconCard("c2", "#/estudio", I.studio, c.cardEstudioTitle || "O Estúdio", c.cardEstudio || "Conheça nosso ambiente, bancada e estrutura.", "", estAlbum?.coverThumb || ""));
+    cards.push(iconCard("c2", "#/estudio", I.studio, c.cardEstudioTitle || "O Estúdio", c.cardEstudio || "Conheça nosso ambiente, bancada e estrutura.", "", estThumb));
   }
   if (c.showCursos !== false) {
     cards.push(iconCard("c5", "#/cursos", I.cap, c.cardCursosTitle || "Cursos", c.cardCursos, isCursosSoon ? `<span class="soon">${esc(c.cursosSoonBadge || "EM BREVE")}</span>` : ""));

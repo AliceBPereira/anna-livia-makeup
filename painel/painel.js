@@ -490,11 +490,12 @@ async function openCustomRouteModal(existing, idx, c, onRefresh) {
   }
 }
 
-/* =============================== CAPA DA CATEGORIA PRINCIPAL (MAQUIAGEM / PENTEADOS / PORTFÓLIO) =============================== */
+/* =============================== CAPA DA CATEGORIA PRINCIPAL (MAQUIAGEM / PENTEADOS / PORTFÓLIO / ESTÚDIO) =============================== */
 function groupCoverKeys(group) {
   if (group === "maquiagem") return { coverKey: "coverMaquiagem", idKey: "coverMaquiagemPhotoId", label: "Maquiagem" };
   if (group === "penteados") return { coverKey: "coverPenteados", idKey: "coverPenteadosPhotoId", label: "Penteados" };
   if (group === "portfolio") return { coverKey: "coverPortfolio", idKey: "coverPortfolioPhotoId", label: "Portfólio" };
+  if (group === "estudio") return { coverKey: "coverEstudio", idKey: "coverEstudioPhotoId", label: "O Estúdio" };
   return null;
 }
 
@@ -643,16 +644,20 @@ async function viewAlbums() {
     const keys = groupCoverKeys(g);
     if (!keys) return "";
     const coverSrc = getEffectiveGroupCover(g, c, st.albums);
+    const isNone = c[keys.coverKey] === "none" || !coverSrc;
     const isCustom = !!(c[keys.coverKey] && c[keys.coverKey] !== "none");
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px;border-radius:12px;background:#FBF8F3;border:1px solid #E5DAC8">
       <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:1">
         <span class="cov" style="width:44px;height:44px;border-radius:8px;flex-shrink:0;${coverSrc ? `background-image:url('${esc(coverSrc)}')` : ""}">${coverSrc ? "" : IC.img}</span>
         <div>
-          <b style="display:block;font-size:.86rem">Capa da categoria ${esc(keys.label)} na página inicial ${isCustom ? '<span class="badge">Escolhida por você</span>' : (coverSrc ? '<span class="badge">Automática</span>' : '<span class="badge off">Sem foto</span>')}</b>
-          <small style="display:block;font-size:.75rem;color:var(--muted)">Escolha qual imagem de qualquer subcategoria será a capa principal de <b>${esc(keys.label)}</b>.</small>
+          <b style="display:block;font-size:.86rem">Capa de ${esc(keys.label)} na página inicial ${isCustom ? '<span class="badge">Escolhida por você</span>' : (coverSrc ? '<span class="badge">Automática</span>' : '<span class="badge off">Sem capa (desativada)</span>')}</b>
+          <small style="display:block;font-size:.75rem;color:var(--muted)">${coverSrc ? `Escolha qual imagem será a capa de <b>${esc(keys.label)}</b> ou desative para deixar sem capa.` : `Atualmente sem foto de capa (exibe apenas o ícone dourado no cartão).`}</small>
         </div>
       </div>
-      <button type="button" class="btn sm gold" data-group-cover="${g}">${IC.cover} Escolher capa de ${esc(keys.label)}</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="btn sm gold" data-group-cover="${g}">${IC.cover} ${coverSrc ? "Trocar capa" : "Escolher capa"}</button>
+        ${!isNone ? `<button type="button" class="btn sm danger" data-group-nocover="${g}">Desativar capa (deixar sem)</button>` : ""}
+      </div>
     </div>`;
   }
 
@@ -668,7 +673,7 @@ async function viewAlbums() {
       ${renderRoutesManagerHtml(c)}
     </div>
     <h2 class="title">Fotos do Estúdio e Galerias</h2>
-    <p class="help">Toque em <b>O Estúdio</b> ou em qualquer categoria abaixo para adicionar fotos, apagar ou mudar a ordem.</p>
+    <p class="help">Toque em <b>O Estúdio</b> ou em qualquer categoria abaixo para adicionar fotos, apagar, escolher a capa ou deixar sem capa.</p>
     ${GROUP_ORDER.map(g => {
       const list = st.albums.filter(a => a.group === g);
       const rKey = groupRouteKey[g];
@@ -676,9 +681,11 @@ async function viewAlbums() {
       const statusBadge = isOn ? `<span class="badge">Ativa no site</span>` : `<span class="badge off">Desativada no site (oculta)</span>`;
       const toggleBtn = `<button type="button" class="btn sm ${isOn ? "" : "primary"}" data-route-toggle="${rKey}" data-route-label="${groupRouteTitle[g]}">${isOn ? "Desativar no site" : "Reativar no site"}</button>`;
       if (g === "estudio") return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">O Estúdio (Ambiente, Bancada e Estrutura) ${statusBadge}</h3><div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-edit-estudio>${IC.edit} Editar textos do Estúdio</button>${toggleBtn}</div></div>
-        <p class="help" style="margin-top:0;margin-bottom:10px">Coloque aqui as fotos da bancada, iluminação, poltronas e espaço para as clientes conhecerem o ambiente:</p>
+        ${renderGroupCoverBar(g)}
         <ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
-      if (g === "portfolio") return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">Portfólio Geral ${statusBadge}</h3>${toggleBtn}</div><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
+      if (g === "portfolio") return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">Portfólio Geral ${statusBadge}</h3>${toggleBtn}</div>
+        ${renderGroupCoverBar(g)}
+        <ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
       return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">${GROUPS[g].label} ${statusBadge}</h3>${toggleBtn}</div>
         ${renderGroupCoverBar(g)}
         <ul class="albums" data-group="${g}">${list.map(a => item(a, true)).join("")}</ul>
@@ -730,6 +737,21 @@ async function viewAlbums() {
     if (await handleRouteManagerClick(e, c, viewAlbums)) return;
     const gcBtn = e.target.closest("[data-group-cover]");
     if (gcBtn) return chooseGroupCoverModal(gcBtn.dataset.groupCover, c, viewAlbums);
+    const ncBtn = e.target.closest("[data-group-nocover]");
+    if (ncBtn) {
+      const g = ncBtn.dataset.groupNocover;
+      const keys = groupCoverKeys(g);
+      if (keys) {
+        await busy(ncBtn, async () => {
+          await setGroupCover(g, null);
+          c[keys.coverKey] = "none";
+          c[keys.idKey] = "";
+        });
+        toast(`Capa de ${keys.label} desativada (ficará sem foto)!`);
+        viewAlbums();
+      }
+      return;
+    }
     if (e.target.closest("[data-edit-estudio]")) return editEstudioTexts();
     const add = e.target.closest("[data-add]");
     if (add) return newAlbum(add.dataset.add);
@@ -889,23 +911,34 @@ function renderAlbum(a) {
   content.innerHTML = `
     <button class="backbtn" data-act="back">${IC.back} Todas as categorias</button>
     <div class="ahead">
-      <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}"></span>
-      <div class="grow"><h2 class="title">${esc(a.title)}</h2><p>${GROUPS[a.group]?.label || ""} · ${plural(n, "foto", "fotos")}</p></div>
-      <button class="btn sm" data-act="edit" title="Editar textos">${IC.edit} ${a.group === "estudio" ? "Editar textos do Estúdio" : "Editar textos"}</button>
+      <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}">${a.coverThumb ? "" : IC.img}</span>
+      <div class="grow"><h2 class="title">${esc(a.title)} ${!a.coverThumb ? '<span class="badge off">Sem capa</span>' : ""}</h2><p>${GROUPS[a.group]?.label || ""} · ${plural(n, "foto", "fotos")}</p></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${a.coverThumb ? `<button class="btn sm danger" data-act="nocover" title="Deixar sem foto de capa">Desativar capa (deixar sem)</button>` : ""}
+        <button class="btn sm" data-act="edit" title="Editar textos">${IC.edit} ${a.group === "estudio" ? "Editar textos do Estúdio" : "Editar textos"}</button>
+      </div>
     </div>
     <div class="toolbar">
       <span class="btn gold upl">${IC.plus} Adicionar fotos<input type="file" accept="image/*" multiple id="fileIn" aria-label="Escolher fotos"></span>
       ${n > 1 ? `<button class="btn" data-act="select">${IC.check} Selecionar</button>` : ""}
       <a class="btn" href="${siteUrl}" target="_blank" rel="noopener">${IC.ext} Ver no site</a>
     </div>
-    ${n ? `<p class="help">Arraste uma foto para mudar a ordem${matchMedia("(hover:hover)").matches ? "" : " (toque e segure)"}. A <b>primeira</b> aparece em destaque no site. Toque numa foto para mais opções.</p>
+    ${n ? `<p class="help">Arraste uma foto para mudar a ordem${matchMedia("(hover:hover)").matches ? "" : " (toque e segure)"}. A <b>primeira</b> aparece em destaque no site. Toque numa foto para escolher ou desativar a capa.</p>
       <div class="pgrid" id="grid">${st.photos.map((p, i) => tileHtml(p, i, a)).join("")}</div>`
       : `<div class="emptybox" id="emptybox">${IC.img}<p>Nenhuma foto nesta seção ainda.<br>Toque em <b>Adicionar fotos</b> para escolher fotos ${a.group === "estudio" ? "do estúdio, bancada e ambiente" : "do celular ou do computador"}.</p></div><div class="pgrid" id="grid"></div>`}`;
 
-  content.onclick = e => {
+  content.onclick = async e => {
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "back") return (location.hash = "#fotos");
     if (act === "edit") return editAlbum(a);
+    if (act === "nocover") {
+      try {
+        await clearAlbumCover(a);
+        toast(`Capa de ${a.title} desativada (sem foto de capa)!`);
+        renderAlbum(a);
+      } catch (x) { toast(errMsg(x), "bad"); }
+      return;
+    }
     if (act === "select") return toggleSelect(true);
     const tile = e.target.closest(".tile:not(.up)");
     if (!tile || dragging) return;
@@ -967,13 +1000,18 @@ async function photoMenu(p) {
   const opts = [];
   const gKeys = groupCoverKeys(a.group);
   const isSubGroup = a.group === "maquiagem" || a.group === "penteados";
+  const isGroupCover = gKeys && loadedContent && loadedContent[gKeys.idKey] === p.id;
   if (isSubGroup) {
     if (a.coverPhotoId !== p.id) opts.push({ label: `Usar como capa desta subcategoria (${a.title})`, icon: IC.cover, value: "cover" });
-    if (!loadedContent || loadedContent[gKeys.idKey] !== p.id) {
+    else opts.push({ label: `Desativar capa desta subcategoria (deixar sem capa)`, icon: IC.cover, value: "nocover" });
+    if (!isGroupCover) {
       opts.push({ label: `★ Usar como capa principal de ${gKeys.label} (na página inicial)`, icon: IC.star, value: "groupCover" });
+    } else {
+      opts.push({ label: `Desativar capa principal de ${gKeys.label} (deixar sem capa)`, icon: IC.star, value: "noGroupCover" });
     }
-  } else if (a.coverPhotoId !== p.id) {
-    opts.push({ label: "Usar como capa desta seção", icon: IC.cover, value: "cover" });
+  } else {
+    if (a.coverPhotoId !== p.id) opts.push({ label: "Usar como capa desta seção", icon: IC.cover, value: "cover" });
+    else opts.push({ label: "Desativar capa desta seção (deixar sem capa)", icon: IC.cover, value: "nocover" });
   }
   if (i > 0) opts.push({ label: "Mover para o início (destaque)", icon: IC.up, value: "first" });
   if (i < st.photos.length - 1) opts.push({ label: "Mover para o fim", icon: IC.down, value: "last" });
@@ -985,13 +1023,23 @@ async function photoMenu(p) {
   try {
     if (v === "cover") {
       await setCover(a, p);
-      if (a.group === "portfolio") await setGroupCover("portfolio", p);
+      if (a.group === "portfolio" || a.group === "estudio") await setGroupCover(a.group, p);
       toast(isSubGroup ? `Capa de ${a.title} atualizada!` : "Capa atualizada!");
+      renderAlbum(a);
+    }
+    if (v === "nocover") {
+      await clearAlbumCover(a);
+      toast(isSubGroup ? `Subcategoria ${a.title} agora está sem capa!` : "Capa desativada!");
       renderAlbum(a);
     }
     if (v === "groupCover" && gKeys) {
       await setGroupCover(a.group, p);
       toast(`Capa principal de ${gKeys.label} atualizada na página inicial!`);
+      renderAlbum(a);
+    }
+    if (v === "noGroupCover" && gKeys) {
+      await setGroupCover(a.group, null);
+      toast(`Capa principal de ${gKeys.label} desativada (sem foto)!`);
       renderAlbum(a);
     }
     if (v === "first" || v === "last") {
@@ -1136,11 +1184,30 @@ async function viewFull(p) {
 }
 
 async function setCover(a, p) {
+  await recordUndo(`Alterar capa de ${a.title}`);
   const coverThumb = p.thumbUrl ? p.thumbUrl : await blobToDataURL(await makeCover(p.thumb));
   await api.saveAlbum({ id: a.id, coverThumb, coverPhotoId: p.id });
   a.coverThumb = coverThumb; a.coverPhotoId = p.id;
+  localStorage.removeItem("alm-cache-v1");
+}
+async function clearAlbumCover(a) {
+  await recordUndo(`Desativar capa de ${a.title}`);
+  await api.saveAlbum({ id: a.id, coverThumb: "", coverPhotoId: "none" });
+  a.coverThumb = "";
+  a.coverPhotoId = "none";
+  if (a.group === "portfolio" || a.group === "estudio") {
+    const keys = groupCoverKeys(a.group);
+    if (keys) {
+      await api.saveContent({ [keys.coverKey]: "none", [keys.idKey]: "" });
+      if (!loadedContent) loadedContent = { ...DEFAULT_CONTENT };
+      loadedContent[keys.coverKey] = "none";
+      loadedContent[keys.idKey] = "";
+    }
+  }
+  localStorage.removeItem("alm-cache-v1");
 }
 async function fixCover(a) {
+  if (a.coverPhotoId === "none") return;
   if (a.coverPhotoId && st.photos.some(p => p.id === a.coverPhotoId)) return;
   if (st.photos.length) await setCover(a, st.photos[0]);
   else if (a.coverThumb || a.coverPhotoId) { await api.saveAlbum({ id: a.id, coverThumb: "", coverPhotoId: "" }); a.coverThumb = ""; a.coverPhotoId = ""; }
