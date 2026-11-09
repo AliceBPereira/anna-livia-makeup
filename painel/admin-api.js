@@ -3,7 +3,7 @@
    - Modo Firebase: Firebase Auth + Firestore (+ Storage opcional).
    - Fallback local (IndexedDB) caso aberto localmente sem servidor. */
 import { firebaseConfig, IMAGE_STORAGE, FIREBASE_SDK, MODE } from "../js/config.js";
-import { DEFAULT_CONTENT, DEFAULT_ALBUMS } from "../js/defaults.js";
+import { DEFAULT_CONTENT, DEFAULT_ALBUMS, ensureRequiredAlbums } from "../js/defaults.js";
 import { kvGet, kvSet, kvDel } from "../js/idb.js";
 
 export { MODE };
@@ -141,7 +141,7 @@ function cloudImpl() {
     },
     async loadAlbums() {
       const st = await fetchState();
-      return (st.albums || DEFAULT_ALBUMS).slice().sort(byOrder);
+      return ensureRequiredAlbums(st.albums || DEFAULT_ALBUMS).sort(byOrder);
     },
     async saveAlbum(album) {
       await call("saveAlbum", { album });
@@ -386,7 +386,7 @@ function demoImpl() {
     emit(current);
   }
   async function photos() { return (await kvGet("photos")) || []; }
-  async function albums() { return (await kvGet("albums")) || DEFAULT_ALBUMS.map(a => ({ ...a })); }
+  async function albums() { return ensureRequiredAlbums((await kvGet("albums")) || DEFAULT_ALBUMS.map(a => ({ ...a }))); }
   async function bumpCount(id, n) {
     const al = await albums(); const a = al.find(x => x.id === id);
     if (a) { a.count = Math.max(0, (a.count || 0) + n); await kvSet("albums", al); }

@@ -5,6 +5,7 @@ const DEFAULT_CONTENT = {
   brand: "Anna Lívia",
   brandSub: "MAKEUP",
   tagline: "Realce o que\nte faz única",
+  heroCta: "Agendar horário",
   heroFeature1: "Maquiagem para todas as ocasiões",
   heroFeature2: "Beleza com técnica e autenticidade",
   heroFeature3: "Atendimento personalizado",
@@ -17,12 +18,37 @@ const DEFAULT_CONTENT = {
   instagram: "annaliviaa_",
   address: "",
   hours: "A definir",
+  homeExploreSub: "Explore",
+  homeExploreTitle: "Serviços & Portfólio",
+  cardAgendamentosTitle: "Agendamentos",
   cardAgendamentos: "Studio Anna Lívia Makeup",
+  cardMaquiagemTitle: "Maquiagem",
   cardMaquiagem: "Noivas, debutantes, pré-wedding e formaturas.",
+  cardPenteadosTitle: "Penteados",
   cardPenteados: "Coque, tranças, semipreso e ondas.",
+  cardPortfolioTitle: "Portfólio",
   cardPortfolio: "Trabalhos realizados.",
+  showEstudio: true,
+  cardEstudioTitle: "O Estúdio",
+  cardEstudio: "Conheça nosso ambiente, bancada e estrutura.",
+  showCursos: true,
+  cardCursosTitle: "Cursos",
   cardCursos: "Aprenda a se maquiar com a Anna.",
+  cursosSoonBadge: "EM BREVE",
+  cardLocalizacaoTitle: "Localização",
   cardLocalizacao: "Como chegar ao estúdio.",
+  estudioTitle: "Nosso Estúdio",
+  estudioIntro: "Um espaço pensado em cada detalhe para receber você com conforto, calma e exclusividade.",
+  estudioText:
+    "Nossa bancada conta com iluminação profissional planejada para valorizar cada detalhe da sua beleza, poltronas confortáveis e produtos selecionados de alta durabilidade.\n\nAqui cada cliente vive uma experiência acolhedoramente tranquila do início ao fim da produção.",
+  estudioFeat1Title: "Bancada & Iluminação",
+  estudioFeat1Text: "Iluminação planejada e produtos selecionados de alta fixação e acabamento impecável.",
+  estudioFeat2Title: "Ambiente Acolhedor",
+  estudioFeat2Text: "Espaço climatizado e confortável pensado para você relaxar antes do seu grande momento.",
+  estudioFeat3Title: "Atendimento Exclusivo",
+  estudioFeat3Text: "Hora marcada com tempo e atenção dedicados exclusivamente à sua produção.",
+  estudioCta: "Agendar horário no estúdio",
+  bookingTitle: "Agendamentos",
   bookingIntro: "Os horários são marcados pelo WhatsApp. Veja como funciona:",
   step1Title: "Envie uma mensagem",
   step1Text: "Conte a data, o horário do evento e o tipo de produção.",
@@ -30,15 +56,30 @@ const DEFAULT_CONTENT = {
   step2Text: "A Anna responde com os horários livres e os valores.",
   step3Title: "Garanta o seu horário",
   step3Text: "A reserva é confirmada após o sinal.",
+  bookingCta: "Agendar pelo WhatsApp",
+  bookingWaMsg: "Olá, Anna! Gostaria de agendar um horário.",
+  maquiagemTitle: "Maquiagem",
   maquiagemIntro: "Escolha a ocasião para ver os trabalhos.",
+  maquiagemCta: "Agendar maquiagem",
+  penteadosTitle: "Penteados",
   penteadosIntro: "Escolha o estilo para ver os trabalhos.",
+  penteadosCta: "Agendar penteado",
+  portfolioTitle: "Portfólio",
   portfolioIntro: "Alguns dos trabalhos que já fiz. Veja muito mais no Instagram.",
-  showCursos: true,
+  portfolioCta: "Quero uma produção assim",
+  cursosTitle: "Cursos",
+  cursosIntro: "Aprenda técnicas de automaquiagem e aperfeiçoamento profissional com a Anna Lívia.",
   cursosSoon: true,
   cursosText:
     "Os cursos de maquiagem estão sendo preparados. Deixe seu nome na lista pelo WhatsApp e seja avisada quando as turmas abrirem.",
+  cursosWaitlistCta: "Quero ser avisada",
+  courses: [],
   locationTitle: "Realce sua beleza para momentos especiais.",
   locationText: "O atendimento é feito no estúdio, com hora marcada.",
+  locationCta: "Agendar horário",
+  igBtnLabel: "Ver mais no Instagram",
+  emptyGalleryText: "Novas fotos chegando em breve por aqui.",
+  footerText: "Anna Lívia Makeup",
   colorPage: "#14110F",
   colorCol: "#231F1B",
   colorCard: "#342D27",
@@ -70,6 +111,8 @@ const DEFAULT_ALBUMS = [
   { id: "escova", group: "penteados", title: "Escova modelada", subtitle: "Liso com movimento",
     description: "Escova com pontas modeladas e brilho, para um visual clássico e elegante." },
   { id: "portfolio", group: "portfolio", title: "Portfólio", subtitle: "Trabalhos realizados",
+    description: "" },
+  { id: "estudio", group: "estudio", title: "O Estúdio", subtitle: "Ambiente, bancada e estrutura",
     description: "" }
 ].map((a, i) => ({ ...a, order: i, coverThumb: "", coverPhotoId: "", count: 0 }));
 
@@ -151,8 +194,16 @@ function defaultState() {
 async function getState() {
   const s = await readJsonBlob(STATE_PATH, defaultState);
   s.content = { ...DEFAULT_CONTENT, ...(s.content || {}) };
+  if (!Array.isArray(s.content.courses)) s.content.courses = [];
   s.media = { hero: "", about: "", ...(s.media || {}) };
-  s.albums = (s.albums && s.albums.length ? s.albums : DEFAULT_ALBUMS).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const albums = (s.albums && s.albums.length ? s.albums : DEFAULT_ALBUMS).slice();
+  ["portfolio", "estudio"].forEach(reqId => {
+    if (!albums.some(a => a.id === reqId)) {
+      const def = DEFAULT_ALBUMS.find(a => a.id === reqId);
+      if (def) albums.push({ ...def, order: albums.length });
+    }
+  });
+  s.albums = albums.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   s.photos = (s.photos || []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   return s;
 }
@@ -304,7 +355,15 @@ module.exports = async (req, res) => {
     const st = await getState();
 
     if (action === "saveContent") {
-      st.content = { ...st.content, ...(body.content || {}) };
+      const next = { ...st.content, ...(body.content || {}) };
+      if (Array.isArray(next.courses)) {
+        for (const c of next.courses) {
+          if (c && typeof c.image === "string" && c.image.startsWith("data:")) {
+            c.image = await uploadDataUrl(`courses/${c.id || uid()}`, c.image);
+          }
+        }
+      }
+      st.content = next;
       st.updatedAt = Date.now();
       await writeJsonBlob(STATE_PATH, st);
       return res.status(200).json({ ok: true, content: st.content });

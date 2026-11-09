@@ -3,7 +3,7 @@
    - Modo Firebase: usa a API REST do Firestore.
    - Fallback local (IndexedDB) apenas se estiver rodando sem servidor local. */
 import { firebaseConfig, MODE } from "./config.js";
-import { DEFAULT_CONTENT, DEFAULT_ALBUMS } from "./defaults.js";
+import { DEFAULT_CONTENT, DEFAULT_ALBUMS, ensureRequiredAlbums } from "./defaults.js";
 import { kvGet } from "./idb.js";
 
 const BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
@@ -96,10 +96,10 @@ export async function getMedia() {
 export async function listAlbums() {
   if (MODE === "cloud") {
     const st = await fetchCloudState();
-    if (st && st.albums) return st.albums.slice().sort(byOrder);
+    if (st && st.albums) return ensureRequiredAlbums(st.albums).sort(byOrder);
   }
   const list = MODE === "firebase" ? await restList("albums") : await kvGet("albums");
-  return (list && list.length ? list : DEFAULT_ALBUMS).slice().sort(byOrder);
+  return ensureRequiredAlbums(list && list.length ? list : DEFAULT_ALBUMS).sort(byOrder);
 }
 
 export async function listPhotos(albumId) {

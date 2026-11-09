@@ -2,10 +2,11 @@
    sempre que algum campo ainda não foi preenchido pelo painel. */
 
 export const DEFAULT_CONTENT = {
-  // Capa
+  // Capa (Entrada do site)
   brand: "Anna Lívia",
   brandSub: "MAKEUP",
   tagline: "Realce o que\nte faz única",
+  heroCta: "Agendar horário",
   heroFeature1: "Maquiagem para todas as ocasiões",
   heroFeature2: "Beleza com técnica e autenticidade",
   heroFeature3: "Atendimento personalizado",
@@ -23,15 +24,42 @@ export const DEFAULT_CONTENT = {
   address: "",
   hours: "A definir",
 
-  // Botões da página inicial
+  // Página inicial e Botões
+  homeExploreSub: "Explore",
+  homeExploreTitle: "Serviços & Portfólio",
+  cardAgendamentosTitle: "Agendamentos",
   cardAgendamentos: "Studio Anna Lívia Makeup",
+  cardMaquiagemTitle: "Maquiagem",
   cardMaquiagem: "Noivas, debutantes, pré-wedding e formaturas.",
+  cardPenteadosTitle: "Penteados",
   cardPenteados: "Coque, tranças, semipreso e ondas.",
+  cardPortfolioTitle: "Portfólio",
   cardPortfolio: "Trabalhos realizados.",
+  showEstudio: true,
+  cardEstudioTitle: "O Estúdio",
+  cardEstudio: "Conheça nosso ambiente, bancada e estrutura.",
+  showCursos: true,
+  cardCursosTitle: "Cursos",
   cardCursos: "Aprenda a se maquiar com a Anna.",
+  cursosSoonBadge: "EM BREVE",
+  cardLocalizacaoTitle: "Localização",
   cardLocalizacao: "Como chegar ao estúdio.",
 
+  // O Estúdio (Ambiente, bancada e estrutura)
+  estudioTitle: "Nosso Estúdio",
+  estudioIntro: "Um espaço pensado em cada detalhe para receber você com conforto, calma e exclusividade.",
+  estudioText:
+    "Nossa bancada conta com iluminação profissional planejada para valorizar cada detalhe da sua beleza, poltronas confortáveis e produtos selecionados de alta durabilidade.\n\nAqui cada cliente vive uma experiência acolhedoramente tranquila do início ao fim da produção.",
+  estudioFeat1Title: "Bancada & Iluminação",
+  estudioFeat1Text: "Iluminação planejada e produtos selecionados de alta fixação e acabamento impecável.",
+  estudioFeat2Title: "Ambiente Acolhedor",
+  estudioFeat2Text: "Espaço climatizado e confortável pensado para você relaxar antes do seu grande momento.",
+  estudioFeat3Title: "Atendimento Exclusivo",
+  estudioFeat3Text: "Hora marcada com tempo e atenção dedicados exclusivamente à sua produção.",
+  estudioCta: "Agendar horário no estúdio",
+
   // Agendamentos
+  bookingTitle: "Agendamentos",
   bookingIntro: "Os horários são marcados pelo WhatsApp. Veja como funciona:",
   step1Title: "Envie uma mensagem",
   step1Text: "Conte a data, o horário do evento e o tipo de produção.",
@@ -39,23 +67,36 @@ export const DEFAULT_CONTENT = {
   step2Text: "A Anna responde com os horários livres e os valores.",
   step3Title: "Garanta o seu horário",
   step3Text: "A reserva é confirmada após o sinal.",
+  bookingCta: "Agendar pelo WhatsApp",
+  bookingWaMsg: "Olá, Anna! Gostaria de agendar um horário.",
 
-  // Maquiagem / Penteados
+  // Maquiagem / Penteados / Portfólio
+  maquiagemTitle: "Maquiagem",
   maquiagemIntro: "Escolha a ocasião para ver os trabalhos.",
+  maquiagemCta: "Agendar maquiagem",
+  penteadosTitle: "Penteados",
   penteadosIntro: "Escolha o estilo para ver os trabalhos.",
-
-  // Portfólio
+  penteadosCta: "Agendar penteado",
+  portfolioTitle: "Portfólio",
   portfolioIntro: "Alguns dos trabalhos que já fiz. Veja muito mais no Instagram.",
+  portfolioCta: "Quero uma produção assim",
 
-  // Cursos
-  showCursos: true,
+  // Cursos (lista de cursos + estado "Em breve" quando vazio)
+  cursosTitle: "Cursos",
+  cursosIntro: "Aprenda técnicas de automaquiagem e aperfeiçoamento profissional com a Anna Lívia.",
   cursosSoon: true,
   cursosText:
     "Os cursos de maquiagem estão sendo preparados. Deixe seu nome na lista pelo WhatsApp e seja avisada quando as turmas abrirem.",
+  cursosWaitlistCta: "Quero ser avisada",
+  courses: [],
 
-  // Localização
+  // Localização e Gerais
   locationTitle: "Realce sua beleza para momentos especiais.",
   locationText: "O atendimento é feito no estúdio, com hora marcada.",
+  locationCta: "Agendar horário",
+  igBtnLabel: "Ver mais no Instagram",
+  emptyGalleryText: "Novas fotos chegando em breve por aqui.",
+  footerText: "Anna Lívia Makeup",
 
   // Cores principais do tema (originais padrão em destaque)
   colorPage: "#14110F",
@@ -74,6 +115,7 @@ export const THEME_COLORS = [
 ];
 
 export const GROUPS = {
+  estudio: { label: "O Estúdio", cta: "Agendar horário no estúdio", prefix: "Estúdio" },
   maquiagem: { label: "Maquiagem", cta: "Agendar maquiagem", prefix: "Maquiagem" },
   penteados: { label: "Penteados", cta: "Agendar penteado", prefix: "Penteado" },
   portfolio: { label: "Portfólio", cta: "Quero uma produção assim", prefix: "Portfólio" }
@@ -103,57 +145,110 @@ export const DEFAULT_ALBUMS = [
   { id: "escova", group: "penteados", title: "Escova modelada", subtitle: "Liso com movimento",
     description: "Escova com pontas modeladas e brilho, para um visual clássico e elegante." },
   { id: "portfolio", group: "portfolio", title: "Portfólio", subtitle: "Trabalhos realizados",
+    description: "" },
+  { id: "estudio", group: "estudio", title: "O Estúdio", subtitle: "Ambiente, bancada e estrutura",
     description: "" }
 ].map((a, i) => ({ ...a, order: i, coverThumb: "", coverPhotoId: "", count: 0 }));
 
+export function ensureRequiredAlbums(list) {
+  const out = Array.isArray(list) && list.length ? list.slice() : DEFAULT_ALBUMS.map(a => ({ ...a }));
+  ["portfolio", "estudio"].forEach(reqId => {
+    if (!out.some(a => a.id === reqId)) {
+      const def = DEFAULT_ALBUMS.find(a => a.id === reqId);
+      if (def) out.push({ ...def, order: out.length });
+    }
+  });
+  return out;
+}
+
 /* Campos de texto editáveis no painel, agrupados por seção. */
 export const CONTENT_FORM = [
-  { title: "Contatos", fields: [
+  { title: "Capa Principal (Entrada do Site)", fields: [
+    ["brand", "Título principal (Nome)", "text"],
+    ["brandSub", "Subtítulo abaixo do nome", "text"],
+    ["tagline", "Frase de impacto da capa", "textarea", "Use Enter para quebrar a linha (ex.: Realce o que / te faz única)."],
+    ["heroCta", "Texto do botão da capa", "text"],
+    ["heroFeature1", "Destaque 1 (rodapé da capa)", "text"],
+    ["heroFeature2", "Destaque 2 (rodapé da capa)", "text"],
+    ["heroFeature3", "Destaque 3 (rodapé da capa)", "text"],
+    ["heroSignature", "Assinatura no rodapé da capa", "text"]
+  ]},
+  { title: "Sobre a Anna Lívia", fields: [
+    ["aboutTitle", "Título da seção", "text"],
+    ["aboutText", "Texto de apresentação", "textarea", "Deixe uma linha em branco para começar um novo parágrafo."],
+    ["aboutSignature", "Assinatura", "text"]
+  ]},
+  { title: "O Estúdio (Ambiente, Bancada e Estrutura)", fields: [
+    ["showEstudio", "Mostrar o card “O Estúdio” na página inicial", "checkbox"],
+    ["estudioTitle", "Título da página do Estúdio", "text"],
+    ["estudioIntro", "Frase de introdução (abaixo do título)", "textarea"],
+    ["estudioText", "Texto sobre o ambiente, bancada e estrutura", "textarea", "Conte como é o espaço, iluminação, poltrona, recepção e produtos. As fotos do estúdio são adicionadas na aba Fotos → O Estúdio."],
+    ["estudioFeat1Title", "Diferencial 1 — título", "text"],
+    ["estudioFeat1Text", "Diferencial 1 — descrição", "textarea"],
+    ["estudioFeat2Title", "Diferencial 2 — título", "text"],
+    ["estudioFeat2Text", "Diferencial 2 — descrição", "textarea"],
+    ["estudioFeat3Title", "Diferencial 3 — título", "text"],
+    ["estudioFeat3Text", "Diferencial 3 — descrição", "textarea"],
+    ["estudioCta", "Texto do botão de agendamento no Estúdio", "text"]
+  ]},
+  { title: "Botões e Títulos da Página Inicial", fields: [
+    ["homeExploreSub", "Subtítulo acima dos cards (ex.: Explore)", "text"],
+    ["homeExploreTitle", "Título acima dos cards (ex.: Serviços & Portfólio)", "text"],
+    ["cardAgendamentosTitle", "Card Agendamentos — título", "text"],
+    ["cardAgendamentos", "Card Agendamentos — subtítulo", "text"],
+    ["cardMaquiagemTitle", "Card Maquiagem — título", "text"],
+    ["cardMaquiagem", "Card Maquiagem — subtítulo", "text"],
+    ["cardPenteadosTitle", "Card Penteados — título", "text"],
+    ["cardPenteados", "Card Penteados — subtítulo", "text"],
+    ["cardPortfolioTitle", "Card Portfólio — título", "text"],
+    ["cardPortfolio", "Card Portfólio — subtítulo", "text"],
+    ["cardEstudioTitle", "Card O Estúdio — título", "text"],
+    ["cardEstudio", "Card O Estúdio — subtítulo", "text"],
+    ["cardCursosTitle", "Card Cursos — título", "text"],
+    ["cardCursos", "Card Cursos — subtítulo", "text"],
+    ["cardLocalizacaoTitle", "Card Localização — título", "text"],
+    ["cardLocalizacao", "Card Localização — subtítulo", "text"]
+  ]},
+  { title: "Contatos e Endereço", fields: [
     ["whatsapp", "WhatsApp (com DDD)", "text", "Ex.: (35) 99752-0784. Todos os botões de agendamento usam este número."],
     ["instagram", "Instagram (só o nome de usuário)", "text", "Sem o @. Ex.: annaliviaa_"],
     ["address", "Endereço do estúdio", "textarea", "O mapa da página Localização é gerado a partir deste endereço. Deixe vazio para esconder."],
     ["hours", "Horário de atendimento", "text"]
   ]},
-  { title: "Capa (topo do site)", fields: [
-    ["brand", "Nome", "text"],
-    ["brandSub", "Texto abaixo do nome", "text"],
-    ["tagline", "Frase da capa", "textarea", "Use Enter para quebrar a linha."],
-    ["heroFeature1", "Destaque 1", "text"],
-    ["heroFeature2", "Destaque 2", "text"],
-    ["heroFeature3", "Destaque 3", "text"],
-    ["heroSignature", "Assinatura", "text"]
-  ]},
-  { title: "Sobre", fields: [
-    ["aboutTitle", "Título", "text"],
-    ["aboutText", "Texto", "textarea", "Deixe uma linha em branco para começar um novo parágrafo."],
-    ["aboutSignature", "Assinatura", "text"]
-  ]},
-  { title: "Botões da página inicial", fields: [
-    ["cardAgendamentos", "Agendamentos — subtítulo", "text"],
-    ["cardMaquiagem", "Maquiagem — subtítulo", "text"],
-    ["cardPenteados", "Penteados — subtítulo", "text"],
-    ["cardPortfolio", "Portfólio — subtítulo", "text"],
-    ["cardCursos", "Cursos — subtítulo", "text"],
-    ["cardLocalizacao", "Localização — subtítulo", "text"]
-  ]},
   { title: "Página Agendamentos", fields: [
+    ["bookingTitle", "Título da página", "text"],
     ["bookingIntro", "Introdução", "textarea"],
     ["step1Title", "Passo 1 — título", "text"], ["step1Text", "Passo 1 — texto", "textarea"],
     ["step2Title", "Passo 2 — título", "text"], ["step2Text", "Passo 2 — texto", "textarea"],
-    ["step3Title", "Passo 3 — título", "text"], ["step3Text", "Passo 3 — texto", "textarea"]
+    ["step3Title", "Passo 3 — título", "text"], ["step3Text", "Passo 3 — texto", "textarea"],
+    ["bookingCta", "Texto do botão do WhatsApp", "text"],
+    ["bookingWaMsg", "Mensagem automática enviada no WhatsApp", "text"]
   ]},
   { title: "Páginas Maquiagem, Penteados e Portfólio", fields: [
-    ["maquiagemIntro", "Maquiagem — introdução", "text"],
-    ["penteadosIntro", "Penteados — introdução", "text"],
-    ["portfolioIntro", "Portfólio — introdução", "textarea"]
+    ["maquiagemTitle", "Maquiagem — título da página", "text"],
+    ["maquiagemIntro", "Maquiagem — frase de introdução", "text"],
+    ["maquiagemCta", "Maquiagem — texto do botão de agendar", "text"],
+    ["penteadosTitle", "Penteados — título da página", "text"],
+    ["penteadosIntro", "Penteados — frase de introdução", "text"],
+    ["penteadosCta", "Penteados — texto do botão de agendar", "text"],
+    ["portfolioTitle", "Portfólio — título da página", "text"],
+    ["portfolioIntro", "Portfólio — frase de introdução", "textarea"],
+    ["portfolioCta", "Portfólio — texto do botão de agendar", "text"]
   ]},
-  { title: "Página Cursos", fields: [
-    ["showCursos", "Mostrar o botão Cursos na página inicial", "checkbox"],
-    ["cursosSoon", "Mostrar o selo “EM BREVE”", "checkbox"],
-    ["cursosText", "Texto", "textarea"]
+  { title: "Página Cursos (Textos Gerais e Aviso “Em Breve”)", fields: [
+    ["showCursos", "Mostrar o card Cursos na página inicial", "checkbox"],
+    ["cursosTitle", "Título da página de Cursos", "text"],
+    ["cursosIntro", "Frase de introdução (aparece quando há cursos cadastrados)", "textarea"],
+    ["cursosSoonBadge", "Texto do selo quando não há cursos (ex.: EM BREVE)", "text"],
+    ["cursosText", "Texto exibido enquanto nenhum curso foi adicionado", "textarea"],
+    ["cursosWaitlistCta", "Texto do botão da lista de espera (enquanto em breve)", "text"]
   ]},
-  { title: "Página Localização", fields: [
-    ["locationTitle", "Título", "text"],
-    ["locationText", "Texto", "textarea"]
+  { title: "Página Localização e Outros Textos do Site", fields: [
+    ["locationTitle", "Localização — título", "text"],
+    ["locationText", "Localização — texto", "textarea"],
+    ["locationCta", "Localização — texto do botão", "text"],
+    ["igBtnLabel", "Texto dos botões do Instagram", "text"],
+    ["emptyGalleryText", "Aviso quando uma galeria ainda não tem fotos", "text"],
+    ["footerText", "Nome no rodapé do site (ao lado de © 2026)", "text"]
   ]}
 ];

@@ -34,16 +34,22 @@ const I = {
   brush: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 20.4l7.2-7.2 1.6 1.6-7.2 7.2c-.45.45-1.15.45-1.6 0s-.45-1.15 0-1.6z"/><path d="M10.8 13.2l2.6-2.6 1.6 1.6-2.6 2.6"/><path d="M13.4 10.6c.3-2.7 2.3-6.2 5-7.3 1.3-.5 2.8 1 2.3 2.3-1.1 2.7-4.6 4.7-7.3 5"/><path d="M15.6 8.4l2.4-2.4"/></svg>',
   hair: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17.6" cy="7.2" r="2.9"/><path d="M7.4 10.6c-.2-3.7 2.6-6.2 5.8-6.2 1.2 0 2.3.3 3.1.9"/><path d="M7.4 10.6c-.8 1-1.4 1.9-1.6 2.6l1.4.5-.2 1.6c0 .8.6 1.3 1.4 1.2l1.4-.2.4 3.4"/><path d="M15.7 10.3c.2 2.7-.7 4.7-2.3 5.9l.6 4.1"/><path d="M15.7 10.3c1.2-.2 2.2-.7 2.9-1.5"/><path d="M9.6 7.6c2 .1 4.1 1 5.9 2.6"/></svg>',
   photo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><circle cx="9" cy="9" r="1.6"/><path d="M3.5 17l5-5 4 4 2.5-2.5 5.5 5.5"/></svg>',
+  studio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="5" y="3" width="14" height="15" rx="7"/><path d="M3 21h18M9 18v3M15 18v3"/><path d="M12 6.5c.3 2.2 1.8 3.7 4 4-2.2.3-3.7 1.8-4 4-.3-2.2-1.8-3.7-4-4 2.2-.3 3.7-1.8 4-4z"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11z"/></svg>',
   cap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M2.5 9.5L12 5l9.5 4.5L12 14z"/><path d="M6.5 11.5v4.3c1.4 1.4 3.5 2.2 5.5 2.2s4.1-.8 5.5-2.2v-4.3"/><path d="M21.5 9.5V14"/></svg>',
   map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 21.5s-6.8-6.4-6.8-11.8a6.8 6.8 0 0 1 13.6 0c0 5.4-6.8 11.8-6.8 11.8z"/><circle cx="12" cy="9.6" r="2.6"/></svg>'
 };
 
-const topbar = back => `<div class="topbar"><a class="back" href="${back}">${I.back}Voltar</a><span class="mark">${NAME}</span></div>`;
+const topbar = back => `<div class="topbar"><a class="back" href="${back}">${I.back}Voltar</a><span class="mark">${esc(S?.content?.footerText || NAME)}</span></div>`;
 const btnWa = (label, text) => `<a class="btn" href="${wa(text)}" target="_blank" rel="noopener">${I.wa} ${esc(label)}</a>`;
-const btnIg = label => igHandle() ? `<a class="btn ghost" href="${igUrl()}" target="_blank" rel="noopener">${I.ig} ${esc(label || "Ver mais no Instagram")}</a>` : "";
+const btnIg = label => igHandle() ? `<a class="btn ghost" href="${igUrl()}" target="_blank" rel="noopener">${I.ig} ${esc(label || S?.content?.igBtnLabel || "Ver mais no Instagram")}</a>` : "";
 
-function iconCard(cls, href, icon, title, sub, extra = "") {
-  return `<a class="card ${cls}" href="${href}"><div class="lead"><span class="ic">${icon}</span></div>${I.curve}<div class="txt"><h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>${extra}</div><span class="go" aria-hidden="true">${I.arrow}</span></a>`;
+function iconCard(cls, href, icon, title, sub, extra = "", thumb = "") {
+  const lead = thumb
+    ? `<div class="slot has-img" aria-hidden="true"><img src="${esc(thumb)}" alt="" loading="lazy"></div>`
+    : `<span class="ic">${icon}</span>`;
+  return `<a class="card ${cls}" href="${href}"><div class="lead">${lead}</div>${I.curve}<div class="txt"><h2>${esc(title)}</h2><span class="sub">${esc(sub)}</span>${extra}</div><span class="go" aria-hidden="true">${I.arrow}</span></a>`;
 }
 function albumCard(a, i) {
   const icon = a.group === "penteados" ? I.hair : I.brush;
@@ -53,26 +59,38 @@ function albumCard(a, i) {
   return `<a class="card sm c${(i % 6) + 1}" href="#/${a.group}/${encodeURIComponent(a.id)}"><div class="lead">${media}</div>${I.curve}<div class="txt"><h2>${esc(a.title)}</h2><span class="sub">${esc(a.subtitle)}</span></div><span class="go" aria-hidden="true">${I.arrow}</span></a>`;
 }
 
+function getActiveCourses() {
+  const list = Array.isArray(S?.content?.courses) ? S.content.courses : [];
+  return list.filter(c => c && c.active !== false && String(c.title || "").trim());
+}
+
 /* ---------------- páginas ---------------- */
 function pageHome() {
   const c = S.content;
   const aboutSrc = S.media.about || "imagens/capa.jpg";
   const about = `<div class="slot has-img"><img src="${esc(aboutSrc)}" alt="${esc(c.aboutSignature)}"></div>`;
+  const estAlbum = S.albums.find(x => x.id === "estudio" || x.group === "estudio");
+  const estudioCard = c.showEstudio !== false
+    ? iconCard("c2", "#/estudio", I.studio, c.cardEstudioTitle || "O Estúdio", c.cardEstudio || "Conheça nosso ambiente, bancada e estrutura.", "", estAlbum?.coverThumb || "")
+    : "";
+  const activeCourses = getActiveCourses();
+  const isCursosSoon = activeCourses.length === 0;
   const cursos = c.showCursos !== false
-    ? iconCard("c5", "#/cursos", I.cap, "Cursos", c.cardCursos, c.cursosSoon ? '<span class="soon">EM BREVE</span>' : "") : "";
+    ? iconCard("c5", "#/cursos", I.cap, c.cardCursosTitle || "Cursos", c.cardCursos, isCursosSoon ? `<span class="soon">${esc(c.cursosSoonBadge || "EM BREVE")}</span>` : "") : "";
   return `
   <section class="sec home-about">
     <h2>${esc(c.aboutTitle)}</h2><div class="line"></div>
     <div class="about">${about}<div>${paras(c.aboutText)}<b>${esc(c.aboutSignature)}</b></div></div>
   </section>
-  <div class="sec-head"><span>Explore</span><h2>Serviços & Portfólio</h2></div>
+  <div class="sec-head"><span>${esc(c.homeExploreSub || "Explore")}</span><h2>${esc(c.homeExploreTitle || "Serviços & Portfólio")}</h2></div>
   <nav class="links" aria-label="Páginas">
-    ${iconCard("c1", "#/agendamentos", I.cal, "Agendamentos", c.cardAgendamentos)}
-    ${iconCard("c2", "#/maquiagem", I.brush, "Maquiagem", c.cardMaquiagem)}
-    ${iconCard("c3", "#/penteados", I.hair, "Penteados", c.cardPenteados)}
-    ${iconCard("c4", "#/portfolio", I.photo, "Portfólio", c.cardPortfolio)}
+    ${iconCard("c1", "#/agendamentos", I.cal, c.cardAgendamentosTitle || "Agendamentos", c.cardAgendamentos)}
+    ${iconCard("c2", "#/maquiagem", I.brush, c.cardMaquiagemTitle || "Maquiagem", c.cardMaquiagem)}
+    ${iconCard("c3", "#/penteados", I.hair, c.cardPenteadosTitle || "Penteados", c.cardPenteados)}
+    ${iconCard("c4", "#/portfolio", I.photo, c.cardPortfolioTitle || "Portfólio", c.cardPortfolio)}
+    ${estudioCard}
     ${cursos}
-    ${iconCard("c6", "#/localizacao", I.map, "Localização", c.cardLocalizacao)}
+    ${iconCard("c6", "#/localizacao", I.map, c.cardLocalizacaoTitle || "Localização", c.cardLocalizacao)}
   </nav>`;
 }
 
@@ -81,11 +99,11 @@ function pageAgendamentos() {
   const steps = [1, 2, 3].filter(n => c["step" + n + "Title"]).map(n =>
     `<li><div><b>${esc(c["step" + n + "Title"])}</b><span>${esc(c["step" + n + "Text"])}</span></div></li>`).join("");
   return `${topbar("#/")}
-  <h1 class="ptitle">Agendamentos</h1>
+  <h1 class="ptitle">${esc(c.bookingTitle || "Agendamentos")}</h1>
   <section class="sec">
     <p class="note">${esc(c.bookingIntro)}</p>
     <ol class="steps">${steps}</ol>
-    <div class="center">${btnWa("Agendar pelo WhatsApp", "Olá, Anna! Gostaria de agendar um horário.")}</div>
+    <div class="center">${btnWa(c.bookingCta || "Agendar pelo WhatsApp", c.bookingWaMsg || "Olá, Anna! Gostaria de agendar um horário.")}</div>
   </section>
   <section class="sec">
     <ul class="info">
@@ -95,23 +113,46 @@ function pageAgendamentos() {
   </section>`;
 }
 
-function pageGroup(g) {
-  const albums = S.albums.filter(a => a.group === g);
+function pageEstudio() {
+  const c = S.content;
+  const feats = [
+    [I.spark, c.estudioFeat1Title, c.estudioFeat1Text],
+    [I.heart, c.estudioFeat2Title, c.estudioFeat2Text],
+    [I.studio, c.estudioFeat3Title, c.estudioFeat3Text]
+  ].filter(([, t, d]) => String(t || "").trim() || String(d || "").trim());
+
   return `${topbar("#/")}
-  <h1 class="ptitle">${esc(GROUPS[g].label)}</h1>
-  <p class="note" style="margin-top:14px">${esc(S.content[g + "Intro"])}</p>
-  <nav class="links" aria-label="${esc(GROUPS[g].label)}">${albums.map(albumCard).join("")}</nav>`;
+  <h1 class="ptitle">${esc(c.estudioTitle || "Nosso Estúdio")}</h1>
+  <section class="sec">
+    ${c.estudioIntro ? `<p class="note">${esc(c.estudioIntro)}</p>` : ""}
+    ${c.estudioText ? `<div class="studio-story">${paras(c.estudioText)}</div>` : ""}
+    ${feats.length ? `<div class="studio-feats">${feats.map(([ic, t, d]) => `<div class="studio-feat"><div class="ic">${ic}</div><div>${t ? `<b>${esc(t)}</b>` : ""}${d ? `<span>${esc(d)}</span>` : ""}</div></div>`).join("")}</div>` : ""}
+    <div class="gallery" id="gallery" data-album="estudio">${'<div class="ph skel"></div>'.repeat(4)}</div>
+    <div class="center btns">${btnWa(c.estudioCta || "Agendar horário no estúdio", "Olá, Anna! Gostaria de agendar um horário no estúdio.")}${btnIg()}</div>
+  </section>`;
+}
+
+function pageGroup(g) {
+  const c = S.content;
+  const albums = S.albums.filter(a => a.group === g);
+  const title = c[g + "Title"] || GROUPS[g].label;
+  return `${topbar("#/")}
+  <h1 class="ptitle">${esc(title)}</h1>
+  <p class="note" style="margin-top:14px">${esc(c[g + "Intro"])}</p>
+  <nav class="links" aria-label="${esc(title)}">${albums.map(albumCard).join("")}</nav>`;
 }
 
 function pageAlbum(a) {
+  const c = S.content;
   const g = GROUPS[a.group] || GROUPS.portfolio;
   const isPf = a.group === "portfolio";
-  const intro = isPf ? S.content.portfolioIntro : a.description;
+  const intro = isPf ? c.portfolioIntro : a.description;
+  const ctaLabel = isPf ? (c.portfolioCta || g.cta) : (c[a.group + "Cta"] || g.cta);
   const cta = isPf
-    ? `<a class="btn" href="#/agendamentos">${esc(g.cta)}</a>`
-    : btnWa(g.cta, `Olá, Anna! Gostaria de agendar: ${g.prefix} – ${a.title}.`);
+    ? `<a class="btn" href="#/agendamentos">${esc(ctaLabel)}</a>`
+    : btnWa(ctaLabel, `Olá, Anna! Gostaria de agendar: ${g.prefix} – ${a.title}.`);
   return `${topbar(isPf ? "#/" : "#/" + a.group)}
-  <h1 class="ptitle">${esc(a.title)}</h1>
+  <h1 class="ptitle">${esc(isPf ? (c.portfolioTitle || a.title) : a.title)}</h1>
   <section class="sec">
     ${intro ? `<p class="note">${esc(intro)}</p>` : ""}
     <div class="gallery" id="gallery" data-album="${esc(a.id)}">${'<div class="ph skel"></div>'.repeat(5)}</div>
@@ -120,11 +161,46 @@ function pageAlbum(a) {
 }
 
 function pageCursos() {
+  const c = S.content;
+  const activeCourses = getActiveCourses();
+  if (!activeCourses.length) {
+    return `${topbar("#/")}
+    <h1 class="ptitle">${esc(c.cursosTitle || "Cursos")}</h1>
+    <section class="sec">
+      <div class="center" style="margin-top:0;margin-bottom:16px"><span class="card" style="display:inline-block;min-height:0;border:0;background:none;box-shadow:none"><span class="soon">${esc(c.cursosSoonBadge || "EM BREVE")}</span></span></div>
+      <p class="note">${esc(c.cursosText)}</p>
+      <div class="center">${btnWa(c.cursosWaitlistCta || "Quero ser avisada", "Olá, Anna! Quero ser avisada sobre os cursos.")}</div>
+    </section>`;
+  }
+
   return `${topbar("#/")}
-  <h1 class="ptitle">Cursos</h1>
+  <h1 class="ptitle">${esc(c.cursosTitle || "Cursos")}</h1>
   <section class="sec">
-    <p class="note">${esc(S.content.cursosText)}</p>
-    <div class="center">${btnWa("Quero ser avisada", "Olá, Anna! Quero ser avisada sobre os cursos.")}</div>
+    ${c.cursosIntro ? `<p class="note">${esc(c.cursosIntro)}</p>` : ""}
+    <div class="course-list">
+      ${activeCourses.map(cr => {
+        const rawLink = String(cr.link || "").trim();
+        const href = rawLink
+          ? (/^https?:\/\//i.test(rawLink) ? rawLink : "https://" + rawLink)
+          : wa(`Olá, Anna! Tenho interesse no curso: ${cr.title}.`);
+        const btnText = String(cr.btnLabel || "").trim() || (rawLink ? "Garantir minha vaga" : "Inscrição pelo WhatsApp");
+        return `<article class="course-card ${cr.image ? "has-img" : ""}">
+          ${cr.image ? `<div class="course-img"><img src="${esc(cr.image)}" alt="${esc(cr.title)}" loading="lazy"></div>` : ""}
+          <div class="course-body">
+            <h2>${esc(cr.title)}</h2>
+            ${(cr.duration || cr.format) ? `<div class="course-meta">
+              ${cr.duration ? `<span class="course-tag">${I.clock}<span>${esc(cr.duration)}</span></span>` : ""}
+              ${cr.format ? `<span class="course-tag">${I.cap}<span>${esc(cr.format)}</span></span>` : ""}
+            </div>` : ""}
+            ${cr.description ? `<p class="course-desc">${esc(cr.description)}</p>` : ""}
+            <div class="course-foot">
+              ${cr.price ? `<div class="course-price"><small>Investimento</small><strong>${esc(cr.price)}</strong></div>` : `<div></div>`}
+              <a class="btn" href="${esc(href)}" target="_blank" rel="noopener">${rawLink ? "" : I.wa} ${esc(btnText)} ${rawLink ? I.arrow : ""}</a>
+            </div>
+          </div>
+        </article>`;
+      }).join("")}
+    </div>
   </section>`;
 }
 
@@ -137,7 +213,10 @@ function pageLocalizacao() {
     <div class="contact">
       <h2>${esc(c.locationTitle)}</h2>
       <p>${esc(c.locationText)}</p>
-      ${btnWa("Agendar horário", "Olá, Anna! Gostaria de agendar um horário.")}
+      <div class="btns" style="justify-content:center">
+        ${btnWa(c.locationCta || "Agendar horário", c.bookingWaMsg || "Olá, Anna! Gostaria de agendar um horário.")}
+        ${c.showEstudio !== false ? `<a class="btn ghost" href="#/estudio">${I.studio} Conhecer o Estúdio</a>` : ""}
+      </div>
       <ul class="info">
         ${addr ? `<li><div class="ic">${I.pin}</div><div><small>Estúdio</small><a href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">${esc(addr)}</a></div></li>` : ""}
         ${c.hours ? `<li><div class="ic">${I.clock}</div><div><small>Horário de atendimento</small><span>${esc(c.hours)}</span></div></li>` : ""}
@@ -160,7 +239,7 @@ async function fillGallery(albumId) {
   }
   if (!el.isConnected || el.dataset.album !== albumId) return;
   if (!photos.length) {
-    el.outerHTML = `<div class="empty"><p>Novas fotos chegando em breve por aqui.</p>${btnIg("Veja os trabalhos no Instagram")}</div>`;
+    el.outerHTML = `<div class="empty"><p>${esc(S.content.emptyGalleryText || "Novas fotos chegando em breve por aqui.")}</p>${btnIg(S.content.igBtnLabel || "Ver mais no Instagram")}</div>`;
     return;
   }
   el.classList.toggle("few", photos.length < 3);
@@ -247,8 +326,13 @@ function applyTheme(c) {
 function applyChrome() {
   const c = S.content;
   applyTheme(c);
-  document.querySelectorAll("[data-t]").forEach(el => { el.textContent = c[el.dataset.t] ?? ""; });
+  document.querySelectorAll("[data-t]").forEach(el => {
+    const val = c[el.dataset.t];
+    if (val !== undefined && val !== null && val !== "") el.textContent = val;
+    else if (DEFAULT_CONTENT[el.dataset.t] !== undefined) el.textContent = DEFAULT_CONTENT[el.dataset.t];
+  });
   const src = S.media.hero || "imagens/capa.jpg";
+  hero.classList.toggle("custom-bg", !!S.media.hero);
   if (hero.dataset.src !== src) {
     hero.dataset.src = src;
     const pre = new Image();
@@ -258,6 +342,8 @@ function applyChrome() {
   $("#social").innerHTML =
     (igHandle() ? `<a href="${igUrl()}" target="_blank" rel="noopener" aria-label="Instagram @${esc(igHandle())}">${I.ig}<span>@${esc(igHandle())}</span></a>` : "") +
     (waNumber(c.whatsapp) ? `<a href="${wa()}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.whatsapp)}">${I.wa}<span>${esc(c.whatsapp)}</span></a>` : "");
+  const navEstudio = $("#navEstudio");
+  if (navEstudio) navEstudio.hidden = c.showEstudio === false;
   const navCursos = $("#navCursos");
   if (navCursos) navCursos.hidden = c.showCursos === false;
   $("#year").textContent = new Date().getFullYear();
@@ -269,15 +355,16 @@ function route() {
   const key = decodeURIComponent(location.hash.replace(/^#\/?/, "").replace(/\/$/, ""));
   if (key === "acesso" || key === "painel" || key === "acesso-anna") { location.href = "painel/"; return; }
   const [a, b] = key.split("/");
-  let html, title = "", album = null;
+  let html, title = "", album = null, galleryAlbumId = "";
   if (!a) html = pageHome();
-  else if (a === "agendamentos") { html = pageAgendamentos(); title = "Agendamentos"; }
-  else if (a === "cursos" && S.content.showCursos !== false) { html = pageCursos(); title = "Cursos"; }
-  else if (a === "localizacao") { html = pageLocalizacao(); title = "Localização"; }
-  else if (a === "portfolio") { album = S.albums.find(x => x.group === "portfolio"); }
-  else if ((a === "maquiagem" || a === "penteados") && !b) { html = pageGroup(a); title = GROUPS[a].label; }
+  else if (a === "agendamentos") { html = pageAgendamentos(); title = S.content.bookingTitle || "Agendamentos"; }
+  else if (a === "estudio" && S.content.showEstudio !== false) { html = pageEstudio(); title = S.content.estudioTitle || "Nosso Estúdio"; galleryAlbumId = "estudio"; }
+  else if (a === "cursos" && S.content.showCursos !== false) { html = pageCursos(); title = S.content.cursosTitle || "Cursos"; }
+  else if (a === "localizacao") { html = pageLocalizacao(); title = S.content.cardLocalizacaoTitle || "Localização"; }
+  else if (a === "portfolio") { album = S.albums.find(x => x.group === "portfolio" || x.id === "portfolio"); }
+  else if ((a === "maquiagem" || a === "penteados") && !b) { html = pageGroup(a); title = S.content[a + "Title"] || GROUPS[a].label; }
   else if ((a === "maquiagem" || a === "penteados") && b) { album = S.albums.find(x => x.group === a && x.id === b); }
-  if (album) { html = pageAlbum(album); title = album.title; }
+  if (album) { html = pageAlbum(album); title = album.title; galleryAlbumId = album.id; }
   if (!html) { if (key) { location.replace("#/"); return; } html = pageHome(); }
 
   shell.classList.toggle("is-home", !a);
@@ -287,7 +374,7 @@ function route() {
   view.innerHTML = `<div class="page enter">${html}</div>`;
   document.title = title ? `${title} | ${NAME}` : NAME;
   window.scrollTo(0, 0);
-  if (album) fillGallery(album.id);
+  if (galleryAlbumId) fillGallery(galleryAlbumId);
 }
 addEventListener("hashchange", () => { if (!lb.hidden) closeLb(true); route(); });
 

@@ -24,23 +24,30 @@
   <a class="brand-link" href="#/"><span data-t="brand">Anna Lívia</span><small data-t="brandSub">MAKEUP</small></a>
   <div class="menu" id="deskMenu">
     <a href="#/" data-nav="">Início</a>
-    <a href="#/maquiagem" data-nav="maquiagem">Maquiagem</a>
-    <a href="#/penteados" data-nav="penteados">Penteados</a>
-    <a href="#/portfolio" data-nav="portfolio">Portfólio</a>
-    <a href="#/cursos" data-nav="cursos" id="navCursos">Cursos</a>
-    <a href="#/localizacao" data-nav="localizacao">Localização</a>
+    <a href="#/maquiagem" data-nav="maquiagem" data-t="cardMaquiagemTitle">Maquiagem</a>
+    <a href="#/penteados" data-nav="penteados" data-t="cardPenteadosTitle">Penteados</a>
+    <a href="#/portfolio" data-nav="portfolio" data-t="cardPortfolioTitle">Portfólio</a>
+    <a href="#/estudio" data-nav="estudio" id="navEstudio" data-t="cardEstudioTitle">O Estúdio</a>
+    <a href="#/cursos" data-nav="cursos" id="navCursos" data-t="cardCursosTitle">Cursos</a>
+    <a href="#/localizacao" data-nav="localizacao" data-t="cardLocalizacaoTitle">Localização</a>
   </div>
-  <a class="btn nav-cta" href="#/agendamentos">Agendar horário</a>
+  <a class="btn nav-cta" href="#/agendamentos" data-t="heroCta">Agendar horário</a>
 </nav>
 
 <div class="shell is-home" id="shell">
   <header class="hero" id="hero" aria-label="Anna Lívia Makeup">
+    <svg class="hero-curves" viewBox="0 0 1024 1536" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M-20 165 C 95 140, 175 65, 200 -20" fill="none" stroke="rgba(217,180,143,.55)" stroke-width="2"/>
+      <path d="M-20 630 C 120 650, 260 800, 520 820" fill="none" stroke="rgba(217,180,143,.45)" stroke-width="2"/>
+      <path d="M-20 765 C 160 700, 340 720, 520 790" fill="none" stroke="rgba(217,180,143,.45)" stroke-width="2"/>
+      <path d="M920 315 C 960 285, 1000 265, 1044 255" fill="none" stroke="rgba(217,180,143,.45)" stroke-width="2"/>
+    </svg>
     <h1 class="c" data-t="brand">Anna Lívia</h1>
     <span class="c mk" data-t="brandSub">MAKEUP</span>
     <span class="rl" aria-hidden="true"></span>
     <p class="c tg" data-t="tagline">Realce o que
 te faz única</p>
-    <a class="cta" href="#/agendamentos">Agendar horário</a>
+    <a class="cta" href="#/agendamentos" data-t="heroCta">Agendar horário</a>
     <div class="ft">
       <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10z"/></svg><span data-t="heroFeature1">Maquiagem para todas as ocasiões</span></div>
       <i></i>
@@ -55,7 +62,7 @@ te faz única</p>
     <div class="view" id="view"><div class="loading"><i></i></div></div>
     <footer>
       <div class="social" id="social"></div>
-      <span class="copy" id="copy">© <span id="year">2026</span> Anna Lívia Makeup</span>
+      <span class="copy" id="copy">© <span id="year">2026</span> <span data-t="footerText">Anna Lívia Makeup</span></span>
     </footer>
   </div>
 </div>

@@ -236,7 +236,7 @@ async function onHash() {
 function route() {
   if (!api.me()) return;
   const [tab = "fotos", sub] = location.hash.replace(/^#\/?/, "").split("/");
-  const t = ["fotos", "textos", "acessos", "conta"].includes(tab) ? tab : "fotos";
+  const t = ["fotos", "cursos", "textos", "acessos", "conta"].includes(tab) ? tab : "fotos";
   st.tab = t; st.token++;
   st.sortables.forEach(s => s.destroy()); st.sortables = [];
   $("#savebar")?.remove(); $("#selbar")?.remove();
@@ -244,6 +244,7 @@ function route() {
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   window.scrollTo(0, 0);
   if (t === "fotos") sub ? viewAlbum(decodeURIComponent(sub)) : viewAlbums();
+  else if (t === "cursos") viewCursos();
   else if (t === "textos") viewTextos();
   else if (t === "acessos") viewAcessos();
   else viewConta();
@@ -251,38 +252,116 @@ function route() {
 const loading = () => { content.innerHTML = '<div style="display:grid;place-items:center;min-height:40vh"><i class="spin"></i></div>'; };
 const failView = e => { console.error(e); content.innerHTML = `<div class="emptybox"><p>${esc(errMsg(e))}</p><button class="btn" onclick="location.reload()">Tentar de novo</button></div>`; };
 
-/* =============================== FOTOS: categorias =============================== */
-const GROUP_ORDER = ["portfolio", "maquiagem", "penteados"];
+function heroPreviewHtml(src, c = DEFAULT_CONTENT) {
+  const bg = src || "../imagens/capa.jpg";
+  return `<div class="hero-pv-card" style="background-image:url('${esc(bg)}')">
+    <div class="hp-txt">
+      <strong>${esc(c.brand || DEFAULT_CONTENT.brand)}</strong>
+      <small>${esc(c.brandSub || DEFAULT_CONTENT.brandSub)}</small>
+      <span>${esc(c.tagline || DEFAULT_CONTENT.tagline)}</span>
+      <i class="hp-btn" style="font-style:normal">${esc(c.heroCta || DEFAULT_CONTENT.heroCta)}</i>
+    </div>
+    <div class="hp-ft">
+      <span>✦ Make</span><span>♡ Técnica</span><span>❀ Exclusivo</span>
+    </div>
+  </div>`;
+}
+
+/* =============================== FOTOS E ESTÚDIO =============================== */
+const GROUP_ORDER = ["estudio", "portfolio", "maquiagem", "penteados"];
 
 async function viewAlbums() {
   const tk = st.token; loading();
-  let m = {};
-  try { [st.albums, m] = await Promise.all([api.loadAlbums(), api.loadMedia().catch(() => ({}))]); } catch (e) { return failView(e); }
+  let m = {}, c = DEFAULT_CONTENT;
+  try { [st.albums, m, c] = await Promise.all([api.loadAlbums(), api.loadMedia().catch(() => ({})), api.loadContent().catch(() => DEFAULT_CONTENT)]); } catch (e) { return failView(e); }
   if (tk !== st.token) return;
-  const heroSrc = m?.hero || "../imagens/capa.jpg";
+  media = m || {};
+  let stagedHero = null;
+
   const item = (a, drag) => `<li class="album" data-id="${esc(a.id)}">
       ${drag ? `<span class="handle" aria-label="Arraste para mudar a ordem">${IC.grip}</span>` : '<span class="handle"></span>'}
       <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}">${a.coverThumb ? "" : IC.img}</span>
-      <span class="meta"><b>${esc(a.title)}</b><small>${plural(a.count || 0, "foto", "fotos")}</small></span>${IC.chev}</li>`;
+      <span class="meta"><b>${esc(a.title)}</b><small>${plural(a.count || 0, "foto", "fotos")}${a.subtitle ? " · " + esc(a.subtitle) : ""}</small></span>${IC.chev}</li>`;
+
+  function renderQuickHero() {
+    const isStaged = stagedHero !== null;
+    const val = isStaged ? stagedHero : media.hero;
+    const src = val || "../imagens/capa.jpg";
+    const badge = isStaged
+      ? `<span class="badge" style="background:#FFF3CD;color:#7A5A00">Pronta para salvar</span>`
+      : (media.hero ? `<span class="badge">Personalizada</span>` : `<span class="badge">Original</span>`);
+    return `
+      ${heroPreviewHtml(src, c)}
+      <div style="flex:1;min-width:210px">
+        <b style="display:block;font-size:1.05rem;margin-bottom:4px">Foto Principal de Entrada (Capa) ${badge}</b>
+        <span class="hint" style="margin:0 0 10px">Você pode trocar apenas a foto de fundo — todos os textos sobre a imagem (<i>${esc(c.brand)} ${esc(c.brandSub)}</i>, frase e botão) são mantidos automaticamente!</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span class="btn gold sm upl" style="position:relative;overflow:hidden">${IC.img} Trocar imagem da capa<input type="file" accept="image/*" id="quickHeroIn" style="position:absolute;inset:0;opacity:0;cursor:pointer"></span>
+          ${val ? `<button type="button" class="btn sm danger" id="quickHeroReset">Voltar à foto original</button>` : ""}
+          <a class="btn sm" href="#textos">${IC.edit} Editar textos ou cores</a>
+          ${isStaged ? `<button type="button" class="btn primary sm" id="quickHeroSave">Salvar nova capa</button>` : ""}
+        </div>
+      </div>`;
+  }
+
   content.innerHTML = `
-    <div class="panel" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px;background:#FBF8F3;border-color:#E5DAC8">
-      <span class="cov" style="width:58px;height:74px;border-radius:10px;background-size:cover;background-position:center;background-image:url('${esc(heroSrc)}')"></span>
-      <div style="flex:1;min-width:190px">
-        <b style="display:block;font-size:.96rem">Capa Principal e Cores do Site</b>
-        <span class="hint" style="margin:3px 0 0">Troque a foto de capa principal, personalize as cores mantendo as originais salvas ou edite os textos.</span>
-      </div>
-      <a class="btn gold sm" href="#textos">${IC.edit} Mudar capa e cores</a>
+    <div class="panel" id="quickHeroBox" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:24px;background:#FBF8F3;border-color:#E5DAC8">
+      ${renderQuickHero()}
     </div>
-    <h2 class="title">Fotos das galerias</h2>
-    <p class="help">Toque em uma categoria para adicionar, apagar ou mudar a ordem das fotos. Arraste pelos pontinhos <b>⋮⋮</b> para mudar a ordem das categorias.</p>
+    <h2 class="title">Fotos do Estúdio e Galerias</h2>
+    <p class="help">Toque em <b>O Estúdio</b> ou em qualquer categoria abaixo para adicionar fotos, apagar ou mudar a ordem.</p>
     ${GROUP_ORDER.map(g => {
       const list = st.albums.filter(a => a.group === g);
-      if (g === "portfolio") return `<h3 class="group">Portfólio</h3><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
+      if (g === "estudio") return `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap"><h3 class="group" style="margin-bottom:8px">O Estúdio (Ambiente, Bancada e Estrutura)</h3><button type="button" class="btn sm" data-edit-estudio>${IC.edit} Editar textos do Estúdio</button></div>
+        <p class="help" style="margin-top:0;margin-bottom:10px">Coloque aqui as fotos da bancada, iluminação, poltronas e espaço para as clientes conhecerem o ambiente:</p>
+        <ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
+      if (g === "portfolio") return `<h3 class="group">Portfólio Geral</h3><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
       return `<h3 class="group">${GROUPS[g].label}</h3>
         <ul class="albums" data-group="${g}">${list.map(a => item(a, true)).join("")}</ul>
         <button class="btn sm addalbum" data-add="${g}">${IC.plus} Nova categoria em ${GROUPS[g].label}</button>`;
     }).join("")}`;
+
+  function bindQuickHero() {
+    const box = $("#quickHeroBox");
+    if (!box) return;
+    const inp = $("#quickHeroIn", box);
+    if (inp) inp.onchange = async e => {
+      const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+      try {
+        const canvas = await openCropModal(f, 2 / 3, "Enquadrar foto da capa (o texto fica à esquerda)", c);
+        if (!canvas) return;
+        const { blob } = await compressCanvas(canvas, 1536, 420 * 1024, 0.85);
+        stagedHero = await blobToDataURL(blob);
+        box.innerHTML = renderQuickHero();
+        bindQuickHero();
+        toast("Prévia pronta! Clique em “Salvar nova capa” para publicar.");
+      } catch (x) { toast(errMsg(x), "bad"); }
+    };
+    const rst = $("#quickHeroReset", box);
+    if (rst) rst.onclick = () => {
+      stagedHero = "";
+      box.innerHTML = renderQuickHero();
+      bindQuickHero();
+      toast("Capa original selecionada. Clique em “Salvar nova capa” para confirmar.");
+    };
+    const sav = $("#quickHeroSave", box);
+    if (sav) sav.onclick = e => busy(e.currentTarget, async () => {
+      try {
+        await recordUndo("Alterar foto da capa principal");
+        await api.saveMedia("hero", stagedHero);
+        media.hero = stagedHero;
+        stagedHero = null;
+        localStorage.removeItem("alm-cache-v1");
+        box.innerHTML = renderQuickHero();
+        bindQuickHero();
+        toast("Capa principal publicada no site!");
+      } catch (x) { toast(errMsg(x), "bad"); }
+    });
+  }
+  bindQuickHero();
+
   content.onclick = e => {
+    if (e.target.closest("[data-edit-estudio]")) return editEstudioTexts();
     const add = e.target.closest("[data-add]");
     if (add) return newAlbum(add.dataset.add);
     const li = e.target.closest(".album");
@@ -293,11 +372,37 @@ async function viewAlbums() {
     onEnd: async ev => {
       if (ev.oldIndex === ev.newIndex) return;
       const ids = $$("ul.albums li").map(li => li.dataset.id);
-      const list = ids.map(id => st.albums.find(a => a.id === id));
+      const list = ids.map(id => st.albums.find(a => a.id === id)).filter(Boolean);
       try { await recordUndo("Ordem das categorias"); await api.reorderAlbums(list); list.forEach((a, i) => a.order = i); localStorage.removeItem("alm-cache-v1"); toast("Ordem salva"); }
       catch (x) { toast(errMsg(x), "bad"); viewAlbums(); }
     }
   })));
+}
+
+async function editEstudioTexts() {
+  let c;
+  try { c = await api.loadContent(); } catch (e) { return toast(errMsg(e), "bad"); }
+  const sec = CONTENT_FORM.find(s => s.title.startsWith("O Estúdio"));
+  if (!sec) return (location.hash = "#textos");
+  const ok = await modal({
+    title: "Textos e Informações do Estúdio",
+    body: `<p style="margin-top:-4px">Edite os textos que aparecem acima das fotos do estúdio e bancada:</p>` +
+      sec.fields.map(([k, label, type, hint]) => field(k, label, type, c[k], hint || "")).join(""),
+    actions: [{ label: "Cancelar", value: false }, {
+      label: "Salvar informações", cls: "primary", primary: true, run: async f => {
+        const patch = {};
+        sec.fields.forEach(([k, , type]) => {
+          const el = f.elements[k];
+          if (el) patch[k] = type === "checkbox" ? el.checked : el.value.trim();
+        });
+        await recordUndo("Editar informações do Estúdio");
+        await api.saveContent(patch);
+        localStorage.removeItem("alm-cache-v1");
+        return true;
+      }
+    }]
+  });
+  if (ok) toast("Informações do Estúdio salvas no site!");
 }
 
 function slugify(s) {
@@ -305,7 +410,7 @@ function slugify(s) {
 }
 function uniqueId(title) {
   const base = slugify(title); let id = base, n = 2;
-  while (st.albums.some(a => a.id === id) || ["portfolio", "maquiagem", "penteados"].includes(id)) id = `${base}-${n++}`;
+  while (st.albums.some(a => a.id === id) || ["estudio", "portfolio", "maquiagem", "penteados"].includes(id)) id = `${base}-${n++}`;
   return id;
 }
 
@@ -332,11 +437,12 @@ async function newAlbum(group) {
 }
 
 async function editAlbum(a) {
+  if (a.group === "estudio") return editEstudioTexts();
   const isPf = a.group === "portfolio";
   const r = await modal({
     title: "Editar categoria",
     body: field("title", "Nome", "text", a.title, "", 'maxlength="40"') +
-      (isPf ? `<p class="hint" style="margin-top:-6px">O texto de introdução do Portfólio é editado na aba Textos.</p>` :
+      (isPf ? `<p class="hint" style="margin-top:-6px">O texto de introdução do Portfólio é editado na aba Capa, Cores & Textos.</p>` :
         field("subtitle", "Subtítulo (aparece no botão)", "text", a.subtitle, "", 'maxlength="70"') +
         field("description", "Descrição (aparece acima das fotos)", "textarea", a.description)) +
       (isPf ? "" : `<button type="button" class="btn danger block" data-del style="margin:6px 0 4px">${IC.trash} Apagar esta categoria</button>`),
@@ -393,13 +499,13 @@ function renderAlbum(a) {
   st.sortables.forEach(s => s.destroy()); st.sortables = [];
   $("#selbar")?.remove(); st.selecting = false; st.sel.clear();
   const n = st.photos.length;
-  const siteUrl = a.group === "portfolio" ? "../#/portfolio" : `../#/${a.group}/${encodeURIComponent(a.id)}`;
+  const siteUrl = a.group === "portfolio" ? "../#/portfolio" : (a.group === "estudio" ? "../#/estudio" : `../#/${a.group}/${encodeURIComponent(a.id)}`);
   content.innerHTML = `
     <button class="backbtn" data-act="back">${IC.back} Todas as categorias</button>
     <div class="ahead">
       <span class="cov" style="${a.coverThumb ? `background-image:url('${esc(a.coverThumb)}')` : ""}"></span>
       <div class="grow"><h2 class="title">${esc(a.title)}</h2><p>${GROUPS[a.group]?.label || ""} · ${plural(n, "foto", "fotos")}</p></div>
-      <button class="iconbtn" data-act="edit" aria-label="Editar categoria" title="Editar nome e textos">${IC.edit}</button>
+      <button class="btn sm" data-act="edit" title="Editar textos">${IC.edit} ${a.group === "estudio" ? "Editar textos do Estúdio" : "Editar textos"}</button>
     </div>
     <div class="toolbar">
       <span class="btn gold upl">${IC.plus} Adicionar fotos<input type="file" accept="image/*" multiple id="fileIn" aria-label="Escolher fotos"></span>
@@ -408,7 +514,7 @@ function renderAlbum(a) {
     </div>
     ${n ? `<p class="help">Arraste uma foto para mudar a ordem${matchMedia("(hover:hover)").matches ? "" : " (toque e segure)"}. A <b>primeira</b> aparece em destaque no site. Toque numa foto para mais opções.</p>
       <div class="pgrid" id="grid">${st.photos.map((p, i) => tileHtml(p, i, a)).join("")}</div>`
-      : `<div class="emptybox" id="emptybox">${IC.img}<p>Nenhuma foto nesta categoria ainda.<br>Toque em <b>Adicionar fotos</b> para escolher do celular ou do computador.</p></div><div class="pgrid" id="grid"></div>`}`;
+      : `<div class="emptybox" id="emptybox">${IC.img}<p>Nenhuma foto nesta seção ainda.<br>Toque em <b>Adicionar fotos</b> para escolher fotos ${a.group === "estudio" ? "do estúdio, bancada e ambiente" : "do celular ou do computador"}.</p></div><div class="pgrid" id="grid"></div>`}`;
 
   content.onclick = e => {
     const act = e.target.closest("[data-act]")?.dataset.act;
@@ -495,7 +601,7 @@ async function photoMenu(p) {
   } catch (e) { toast(errMsg(e), "bad"); }
 }
 
-async function openCropModal(src, ratio = 4 / 5, title = "Ajustar enquadramento") {
+async function openCropModal(src, ratio = 4 / 5, title = "Ajustar enquadramento", heroText = null) {
   let img = await loadImage(src);
   let z = 1, nx = 0, ny = 0;
   function clamp() {
@@ -513,11 +619,22 @@ async function openCropModal(src, ratio = 4 / 5, title = "Ajustar enquadramento"
     c.imageSmoothingQuality = "high";
     c.drawImage(img, w / 2 + nx * w - iw / 2, h / 2 + ny * h - ih / 2, iw, ih);
   }
+  const heroOverlay = heroText ? `<div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(95deg,rgba(24,17,12,.7) 0%,rgba(24,17,12,.3) 48%,transparent 75%),linear-gradient(180deg,transparent 60%,rgba(18,14,11,.85) 90%);color:#F5E0C7">
+    <div style="position:absolute;left:5%;top:22%;width:55%;text-align:center">
+      <div style="font-family:var(--serif);font-size:1.35rem;line-height:1">${esc(heroText.brand || DEFAULT_CONTENT.brand)}</div>
+      <div style="font-size:.5rem;letter-spacing:.38em;margin:4px 0 6px;color:#EBD3BA">${esc(heroText.brandSub || DEFAULT_CONTENT.brandSub)}</div>
+      <div style="font-size:.44rem;letter-spacing:.25em;text-transform:uppercase;line-height:1.5;white-space:pre-line;color:#EBD3BA">${esc(heroText.tagline || DEFAULT_CONTENT.tagline)}</div>
+      <div style="display:inline-block;margin-top:8px;padding:3px 8px;border:1px solid rgba(230,194,154,.75);border-radius:999px;font-size:.42rem;letter-spacing:.18em;text-transform:uppercase">${esc(heroText.heroCta || DEFAULT_CONTENT.heroCta)}</div>
+    </div>
+    <div style="position:absolute;left:6%;right:6%;bottom:7%;border-top:1px solid rgba(217,180,143,.4);padding-top:5px;display:flex;justify-content:space-around;font-size:.4rem;letter-spacing:.15em;text-transform:uppercase;color:#EBD3BA">
+      <span>✦ Destaques</span><span>♡ Técnica</span><span>❀ Atendimento</span>
+    </div>
+  </div>` : "";
   try {
     return await modal({
       title,
-      body: `<p style="margin-top:-4px">Arraste a foto para posicionar e use o zoom para aproximar.</p>
-        <div class="crop-stage" id="cStage"><canvas id="cCv"></canvas><div class="grid"></div></div>
+      body: `<p style="margin-top:-4px">${heroText ? "Arraste a foto para posicionar o rosto à direita — os textos à esquerda e no rodapé serão mantidos sobre a foto:" : "Arraste a foto para posicionar e use o zoom para aproximar."}</p>
+        <div class="crop-stage" id="cStage"><canvas id="cCv"></canvas>${heroOverlay}<div class="grid"></div></div>
         <div class="crop-bar"><span style="font-size:.76rem;color:var(--muted)">Zoom</span><input type="range" id="cZoom" min="1" max="4" step="0.01" value="1"></div>
         <div style="display:flex;gap:8px;margin-bottom:6px">
           <button type="button" class="btn sm" id="cRot">${IC.rot} Girar</button>
@@ -718,6 +835,220 @@ async function uploadFiles(files, a) {
   renderAlbum(a);
 }
 
+/* =============================== CURSOS =============================== */
+let loadedContent = null;
+
+async function viewCursos() {
+  const tk = st.token; loading();
+  let c;
+  try { c = await api.loadContent(); } catch (e) { return failView(e); }
+  if (tk !== st.token) return;
+  loadedContent = c;
+  const courses = Array.isArray(c.courses) ? c.courses : [];
+  const activeCount = courses.filter(x => x && x.active !== false && String(x.title || "").trim()).length;
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+      <h2 class="title" style="margin:0">Cursos</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn gold" id="addCourseBtn">${IC.plus} Adicionar curso</button>
+        <a class="btn" href="../#/cursos" target="_blank" rel="noopener">${IC.ext} Ver no site</a>
+      </div>
+    </div>
+    <div class="panel" style="background:${activeCount ? "#F3F9F4" : "#FBF8F3"};border-color:${activeCount ? "#C3DFC8" : "#E5DAC8"};margin-bottom:20px">
+      ${activeCount
+        ? `<b style="display:block;font-size:.95rem;color:#255830;margin-bottom:4px">✓ ${plural(activeCount, "curso publicado", "cursos publicados")} no site</b>
+           <span class="hint" style="margin:0">O aviso “Em Breve” foi substituído automaticamente pelos seus cursos abaixo. Se você pausar ou apagar todos os cursos, o site volta a mostrar “${esc(c.cursosSoonBadge || "EM BREVE")}” sozinho.</span>`
+        : `<b style="display:block;font-size:.95rem;color:#7A5A00;margin-bottom:4px">⏳ O site está exibindo o aviso “${esc(c.cursosSoonBadge || "EM BREVE")}”</b>
+           <span class="hint" style="margin:0">Enquanto nenhum curso estiver ativo abaixo, o site mostra automaticamente o selo <b>${esc(c.cursosSoonBadge || "EM BREVE")}</b> e o botão da lista de espera. Clique em <b>Adicionar curso</b> quando quiser lançar um curso com valor, duração e link!</span>`}
+    </div>
+
+    ${courses.length ? `<ul class="adm-courses" id="courseList">
+      ${courses.map((cr, idx) => {
+        const off = cr.active === false;
+        return `<li class="adm-course ${off ? "off" : ""}" data-idx="${idx}">
+          <span class="c-cov" style="${cr.image ? `background-image:url('${esc(cr.image)}')` : ""}">${cr.image ? "" : IC.img}</span>
+          <div class="c-info">
+            <b>${esc(cr.title || "Curso sem nome")} ${off ? '<span class="badge off">Pausado (oculto)</span>' : '<span class="badge">Visível no site</span>'}</b>
+            <small>
+              ${cr.price ? `<b>Valor:</b> ${esc(cr.price)} · ` : ""}
+              ${cr.duration ? `<b>Duração:</b> ${esc(cr.duration)} · ` : ""}
+              ${cr.format ? `${esc(cr.format)} · ` : ""}
+              <b>Link:</b> ${cr.link ? esc(cr.link) : "Direto para o WhatsApp"}
+            </small>
+          </div>
+          <div class="acts">
+            <button type="button" class="btn sm" data-cact="edit">${IC.edit} Editar</button>
+            <button type="button" class="btn sm" data-cact="toggle">${off ? "Ativar no site" : "Pausar"}</button>
+            ${idx > 0 ? `<button type="button" class="btn sm" data-cact="up" title="Subir">${IC.up}</button>` : ""}
+            ${idx < courses.length - 1 ? `<button type="button" class="btn sm" data-cact="down" title="Descer">${IC.down}</button>` : ""}
+            <button type="button" class="btn sm danger" data-cact="del" title="Apagar">${IC.trash}</button>
+          </div>
+        </li>`;
+      }).join("")}
+    </ul>` : `<div class="emptybox" style="margin-bottom:20px">${IC.img}<p>Nenhum curso cadastrado ainda.<br>Enquanto esta lista estiver vazia, o site exibe <b>${esc(c.cursosSoonBadge || "EM BREVE")}</b>.<br>Toque em <b>Adicionar curso</b> acima quando quiser cadastrar seu primeiro curso.</p></div>`}
+
+    <form class="panel" id="cursosTxtForm" style="margin-top:22px" novalidate>
+      <h3 class="group" style="margin-top:0">Textos da Página de Cursos e Aviso “Em Breve”</h3>
+      ${field("showCursos", "Mostrar o botão Cursos na página inicial", "checkbox", c.showCursos !== false)}
+      ${field("cursosTitle", "Título da página de Cursos", "text", c.cursosTitle || "Cursos")}
+      ${field("cursosIntro", "Frase de introdução (aparece acima da lista quando há cursos ativos)", "textarea", c.cursosIntro || "")}
+      ${field("cursosSoonBadge", "Texto do selo quando não há cursos ativos (ex.: EM BREVE)", "text", c.cursosSoonBadge || "EM BREVE")}
+      ${field("cursosText", "Texto exibido enquanto não há nenhum curso ativo", "textarea", c.cursosText || "")}
+      ${field("cursosWaitlistCta", "Texto do botão da lista de espera (enquanto em breve)", "text", c.cursosWaitlistCta || "Quero ser avisada")}
+      <button type="submit" class="btn primary">Salvar textos de Cursos</button>
+    </form>`;
+
+  $("#addCourseBtn").onclick = () => openCourseModal(null, courses);
+
+  const cl = $("#courseList");
+  if (cl) cl.onclick = async e => {
+    const b = e.target.closest("[data-cact]"); if (!b) return;
+    const idx = +b.closest(".adm-course").dataset.idx;
+    const act = b.dataset.cact;
+    const cr = courses[idx]; if (!cr) return;
+    if (act === "edit") return openCourseModal(cr, courses, idx);
+    if (act === "toggle") {
+      cr.active = cr.active === false ? true : false;
+      await saveCoursesList(courses, cr.active ? `Ativar curso ${cr.title}` : `Pausar curso ${cr.title}`);
+      return;
+    }
+    if (act === "up" && idx > 0) {
+      [courses[idx - 1], courses[idx]] = [courses[idx], courses[idx - 1]];
+      await saveCoursesList(courses, "Mudar ordem dos cursos");
+      return;
+    }
+    if (act === "down" && idx < courses.length - 1) {
+      [courses[idx + 1], courses[idx]] = [courses[idx], courses[idx + 1]];
+      await saveCoursesList(courses, "Mudar ordem dos cursos");
+      return;
+    }
+    if (act === "del") {
+      if (!(await confirmBox("Apagar curso?", `O curso <b>${esc(cr.title)}</b> será removido do site.`, "Apagar", true))) return;
+      courses.splice(idx, 1);
+      await saveCoursesList(courses, `Apagar curso ${cr.title}`);
+    }
+  };
+
+  $("#cursosTxtForm").onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target;
+    const patch = {
+      showCursos: f.elements.showCursos.checked,
+      cursosTitle: fv(f, "cursosTitle") || "Cursos",
+      cursosIntro: fv(f, "cursosIntro"),
+      cursosSoonBadge: fv(f, "cursosSoonBadge") || "EM BREVE",
+      cursosText: fv(f, "cursosText"),
+      cursosWaitlistCta: fv(f, "cursosWaitlistCta") || "Quero ser avisada"
+    };
+    await busy($("button[type=submit]", f), async () => {
+      try {
+        await recordUndo("Editar textos de Cursos");
+        await api.saveContent(patch);
+        localStorage.removeItem("alm-cache-v1");
+        toast("Textos de Cursos salvos!");
+        viewCursos();
+      } catch (x) { toast(errMsg(x), "bad"); }
+    });
+  };
+}
+
+async function saveCoursesList(courses, undoLabel) {
+  try {
+    await recordUndo(undoLabel);
+    const activeCount = courses.filter(x => x && x.active !== false && String(x.title || "").trim()).length;
+    await api.saveContent({ courses, cursosSoon: activeCount === 0 });
+    localStorage.removeItem("alm-cache-v1");
+    toast("Cursos atualizados no site!");
+    viewCursos();
+  } catch (x) { toast(errMsg(x), "bad"); }
+}
+
+async function openCourseModal(existing, courses, idx = -1) {
+  const isNew = !existing;
+  const cr = existing ? { ...existing } : {
+    id: "cr-" + Date.now().toString(36),
+    title: "",
+    price: "",
+    duration: "",
+    format: "",
+    link: "",
+    btnLabel: "Quero me inscrever",
+    description: "",
+    image: "",
+    active: true
+  };
+  let pickedImg = cr.image || "";
+
+  const ok = await modal({
+    title: isNew ? "Adicionar Curso" : "Editar Curso",
+    body: `
+      ${field("title", "Nome do curso *", "text", cr.title, "Ex.: Curso de Automaquiagem VIP ou Especialização em Noivas")}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        ${field("price", "Valor / Investimento", "text", cr.price, "Ex.: R$ 490,00 ou 6x de R$ 89")}
+        ${field("duration", "Tempo de duração", "text", cr.duration, "Ex.: 4 horas (1 dia)")}
+      </div>
+      ${field("format", "Modalidade / Formato", "text", cr.format, "Ex.: Presencial no estúdio · Individual ou Online")}
+      ${field("description", "Descrição (o que a aluna vai aprender, materiais, certificado…)", "textarea", cr.description)}
+      ${field("link", "Link do curso (Hotmart, Kiwify, página de vendas…)", "text", cr.link, "Deixe vazio se quiser que o botão abra direto o seu WhatsApp!")}
+      ${field("btnLabel", "Texto do botão de inscrição", "text", cr.btnLabel || "Quero me inscrever")}
+      <div class="imgfield" id="courseImgBox" style="margin-bottom:14px">
+        <span class="pv ab" id="courseImgPv" style="${pickedImg ? `background-image:url('${esc(pickedImg)}')` : ""}"></span>
+        <div>
+          <b>Foto do curso (opcional)</b>
+          <span class="hint">Uma foto ilustrativa do curso ou certificado.</span>
+          <div class="acts">
+            <span class="btn sm gold upl" style="position:relative;overflow:hidden">Escolher foto<input type="file" accept="image/*" id="courseImgIn" style="position:absolute;inset:0;opacity:0;cursor:pointer"></span>
+            <button type="button" class="btn sm danger" id="courseImgDel" ${pickedImg ? "" : "hidden"}>Remover foto</button>
+          </div>
+        </div>
+      </div>
+      ${field("active", "Mostrar este curso publicado no site", "checkbox", cr.active !== false)}`,
+    actions: [{ label: "Cancelar", value: false }, {
+      label: isNew ? "Adicionar e publicar" : "Salvar curso", cls: "primary", primary: true, run: async f => {
+        const title = fv(f, "title");
+        if (!title) throw { friendly: "Digite o nome do curso." };
+        const updated = {
+          ...cr,
+          title,
+          price: fv(f, "price"),
+          duration: fv(f, "duration"),
+          format: fv(f, "format"),
+          description: fv(f, "description"),
+          link: fv(f, "link"),
+          btnLabel: fv(f, "btnLabel") || "Quero me inscrever",
+          image: pickedImg,
+          active: f.elements.active.checked
+        };
+        if (isNew) courses.push(updated);
+        else if (idx >= 0) courses[idx] = updated;
+        await saveCoursesList(courses, isNew ? `Adicionar curso ${title}` : `Editar curso ${title}`);
+        return true;
+      }
+    }],
+    onMount(ov) {
+      const inp = $("#courseImgIn", ov), pv = $("#courseImgPv", ov), delBtn = $("#courseImgDel", ov);
+      if (inp) inp.onchange = async e => {
+        const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+        try {
+          const img = await loadImage(f);
+          const { blob } = await compressCanvas(img, 1000, 220 * 1024, 0.84);
+          if (f instanceof Blob && img.src) URL.revokeObjectURL(img.src);
+          pickedImg = await blobToDataURL(blob);
+          pv.style.backgroundImage = `url('${pickedImg}')`;
+          delBtn.hidden = false;
+        } catch (x) { toast(errMsg(x), "bad"); }
+      };
+      if (delBtn) delBtn.onclick = () => {
+        pickedImg = "";
+        pv.style.backgroundImage = "";
+        delBtn.hidden = true;
+      };
+    }
+  });
+  return ok;
+}
+
 /* =============================== CAPA, CORES E TEXTOS =============================== */
 let media = {};
 let pendingMedia = {};
@@ -735,6 +1066,7 @@ async function viewTextos() {
   let c;
   try { [c, media] = await Promise.all([api.loadContent(), api.loadMedia()]); } catch (e) { return failView(e); }
   if (tk !== st.token) return;
+  loadedContent = c;
   st.dirty = false;
   pendingMedia = {};
   colorState = {};
@@ -745,9 +1077,9 @@ async function viewTextos() {
       <h2 class="title" style="margin:0">Capa, Cores e Textos</h2>
       <button type="button" class="btn primary" id="topSaveBtn" data-save-all disabled>Salvar alterações</button>
     </div>
-    <p class="help">Altere a foto da capa principal, as cores do site ou os textos e toque em <b>Salvar alterações</b>. As mudanças aparecem em todos os computadores e celulares.</p>
+    <p class="help">Altere a foto da capa principal (os textos sobre a capa são mantidos!), as cores do site ou qualquer texto do site e toque em <b>Salvar alterações</b>.</p>
     <details class="panel" open>
-      <summary>Foto da Capa Principal e Foto do “Sobre”</summary>
+      <summary>Foto da Capa Principal (Entrada) e Foto do “Sobre”</summary>
       <div class="body" id="mediaBody">${renderMediaFields()}</div>
     </details>
     <details class="panel" open>
@@ -774,7 +1106,7 @@ async function viewTextos() {
 function renderMediaFields() {
   const hasPending = Object.keys(pendingMedia).length > 0;
   return `
-    ${imgField("hero", "Foto da Capa Principal", "Aparece em destaque no topo do site (celular e computador). Use uma foto vertical.")}
+    ${imgField("hero", "Foto da Capa Principal (Entrada do Site)", "Troque a imagem de fundo mantendo todos os textos da capa sobrepostos (Anna Lívia Makeup, frase, botão e destaques do rodapé).")}
     ${imgField("about", "Foto do “Sobre”", "Aparece ao lado do texto de apresentação da Anna Lívia.")}
     ${hasPending ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <span style="font-size:.82rem;color:#7A5A00"><b>Alteração de foto pronta!</b> Clique em Salvar para publicar no site.</span>
@@ -789,8 +1121,11 @@ function imgField(key, title, hint) {
   const badge = isStaged
     ? `<span class="badge" style="background:#FFF3CD;color:#7A5A00">Não salva</span>`
     : (media[key] ? `<span class="badge">Personalizada</span>` : `<span class="badge">Original</span>`);
+  const preview = key === "hero"
+    ? heroPreviewHtml(src, loadedContent || DEFAULT_CONTENT)
+    : `<span class="pv ab" style="${src ? `background-image:url('${esc(src)}')` : ""}"></span>`;
   return `<div class="imgfield" data-key="${key}">
-    <span class="pv ${key === "about" ? "ab" : ""}" style="${src ? `background-image:url('${esc(src)}')` : ""}"></span>
+    ${preview}
     <div>
       <b>${esc(title)} ${badge}</b>
       <span class="hint">${esc(hint)}</span>
@@ -810,7 +1145,12 @@ function bindImgFields() {
       const btn = $(".upl", box);
       try {
         const ratio = key === "hero" ? 2 / 3 : 3 / 4;
-        const canvas = await openCropModal(f, ratio, key === "hero" ? "Enquadrar foto da capa principal" : "Enquadrar foto do Sobre");
+        const canvas = await openCropModal(
+          f,
+          ratio,
+          key === "hero" ? "Enquadrar foto da capa principal" : "Enquadrar foto do Sobre",
+          key === "hero" ? (loadedContent || DEFAULT_CONTENT) : null
+        );
         if (!canvas) return;
         await busy(btn, async () => {
           const maxB = key === "hero" ? 420 * 1024 : 200 * 1024;
@@ -965,6 +1305,7 @@ async function saveTextos() {
     data[tc.key] = colorState[tc.key] || tc.default;
   });
   await api.saveContent(data);
+  loadedContent = { ...(loadedContent || {}), ...data };
   localStorage.removeItem("alm-cache-v1");
   st.dirty = false;
   $("#savebar")?.remove();
