@@ -166,17 +166,30 @@ function verifyToken(tok) {
   }
 }
 
-async function readJsonBlob(prefix, fallback) {
+const memCache = {};
+
+async function readJsonBlob(prefix, fallback, forWrite = false) {
+  if (!forWrite && memCache[prefix] && (Date.now() - memCache[prefix].ts < 15000)) {
+    return JSON.parse(JSON.stringify(memCache[prefix].data));
+  }
   try {
     const { blobs } = await list({ prefix, limit: 30 });
     if (!blobs || !blobs.length) return fallback();
     blobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime() || b.pathname.localeCompare(a.pathname));
     const newest = blobs[0];
     const r = await fetch(newest.url, { cache: "no-store" });
-    if (!r.ok) return fallback();
-    return await r.json();
+    if (!r.ok) {
+      if (forWrite) throw new Error(`Armazenamento temporariamente indisponível (${r.status}).`);
+      if (memCache[prefix]) return JSON.parse(JSON.stringify(memCache[prefix].data));
+      return fallback();
+    }
+    const data = await r.json();
+    memCache[prefix] = { data, ts: Date.now() };
+    return JSON.parse(JSON.stringify(data));
   } catch (e) {
     console.error("readJsonBlob error:", e);
+    if (forWrite) throw e;
+    if (memCache[prefix]) return JSON.parse(JSON.stringify(memCache[prefix].data));
     return fallback();
   }
 }
@@ -190,6 +203,7 @@ async function writeJsonBlob(prefix, obj) {
     contentType: "application/json",
     cacheControlMaxAge: 0
   });
+  memCache[prefix] = { data: obj, ts: Date.now() };
   if (blobs && blobs.length) {
     try { await del(blobs.map(b => b.url)); } catch (e) { console.warn("del old blobs:", e); }
   }
@@ -205,8 +219,8 @@ function defaultState() {
   };
 }
 
-async function getState() {
-  const s = await readJsonBlob(STATE_PATH, defaultState);
+async function getState(forWrite = false) {
+  const s = await readJsonBlob(STATE_PATH, defaultState, forWrite);
   s.content = { ...DEFAULT_CONTENT, ...(s.content || {}) };
   if (!Array.isArray(s.content.courses)) s.content.courses = [];
   if (!Array.isArray(s.content.customRoutes)) s.content.customRoutes = [];
@@ -367,7 +381,7 @@ module.exports = async (req, res) => {
     }
 
     // Operações no estado do site
-    const st = await getState();
+    const st = await getState(true);
 
     if (action === "saveContent") {
       const next = { ...st.content, ...(body.content || {}) };
@@ -448,7 +462,7 @@ module.exports = async (req, res) => {
       const alb = st.albums.find(a => a.id === body.albumId);
       if (alb) {
         alb.count = st.photos.filter(p => p.albumId === alb.id).length;
-        if (alb.group !== "portfolio" && !alb.coverThumb) {
+        if (alb.coverPhotoId !== "none" && !alb.coverThumb) {
           alb.coverThumb = thumbUrl;
           alb.coverPhotoId = photo.id;
         }
@@ -482,7 +496,7 @@ module.exports = async (req, res) => {
       st.albums.forEach(a => {
         const list = st.photos.filter(p => p.albumId === a.id).sort((x, y) => (x.order ?? 0) - (y.order ?? 0));
         a.count = list.length;
-        if (a.group !== "portfolio" && (!a.coverPhotoId || !list.some(p => p.id === a.coverPhotoId))) {
+        if (a.coverPhotoId !== "none" && (!a.coverPhotoId || !list.some(p => p.id === a.coverPhotoId))) {
           a.coverPhotoId = list[0]?.id || "";
           a.coverThumb = list[0]?.thumbUrl || list[0]?.thumb || "";
         }
@@ -510,7 +524,7 @@ module.exports = async (req, res) => {
       st.albums.forEach(a => {
         const list = st.photos.filter(x => x.albumId === a.id).sort((x, y) => (x.order ?? 0) - (y.order ?? 0));
         a.count = list.length;
-        if (a.group !== "portfolio" && (!a.coverPhotoId || !list.some(x => x.id === a.coverPhotoId))) {
+        if (a.coverPhotoId !== "none" && (!a.coverPhotoId || !list.some(x => x.id === a.coverPhotoId))) {
           a.coverPhotoId = list[0]?.id || "";
           a.coverThumb = list[0]?.thumbUrl || list[0]?.thumb || "";
         }
