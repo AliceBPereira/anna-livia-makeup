@@ -75,6 +75,10 @@ function pageHome() {
   const aboutSrc = S.media.about || "imagens/capa.jpg";
   const about = `<div class="slot has-img"><img src="${esc(aboutSrc)}" alt="${esc(c.aboutSignature)}"></div>`;
   const estAlbum = S.albums.find(x => x.id === "estudio" || x.group === "estudio");
+  const pfAlbum = S.albums.find(x => x.id === "portfolio" || x.group === "portfolio");
+  const maqThumb = c.coverMaquiagem === "none" ? "" : (c.coverMaquiagem || S.albums.find(x => x.group === "maquiagem" && x.coverThumb)?.coverThumb || "");
+  const pentThumb = c.coverPenteados === "none" ? "" : (c.coverPenteados || S.albums.find(x => x.group === "penteados" && x.coverThumb)?.coverThumb || "");
+  const pfThumb = c.coverPortfolio === "none" ? "" : (c.coverPortfolio || pfAlbum?.coverThumb || "");
   const activeCourses = getActiveCourses();
   const isCursosSoon = activeCourses.length === 0;
 
@@ -83,13 +87,13 @@ function pageHome() {
     cards.push(iconCard("c1", "#/agendamentos", I.cal, c.cardAgendamentosTitle || "Agendamentos", c.cardAgendamentos));
   }
   if (c.showMaquiagem !== false) {
-    cards.push(iconCard("c2", "#/maquiagem", I.brush, c.cardMaquiagemTitle || "Maquiagem", c.cardMaquiagem));
+    cards.push(iconCard("c2", "#/maquiagem", I.brush, c.cardMaquiagemTitle || "Maquiagem", c.cardMaquiagem, "", maqThumb));
   }
   if (c.showPenteados !== false) {
-    cards.push(iconCard("c3", "#/penteados", I.hair, c.cardPenteadosTitle || "Penteados", c.cardPenteados));
+    cards.push(iconCard("c3", "#/penteados", I.hair, c.cardPenteadosTitle || "Penteados", c.cardPenteados, "", pentThumb));
   }
   if (c.showPortfolio !== false) {
-    cards.push(iconCard("c4", "#/portfolio", I.photo, c.cardPortfolioTitle || "Portfólio", c.cardPortfolio));
+    cards.push(iconCard("c4", "#/portfolio", I.photo, c.cardPortfolioTitle || "Portfólio", c.cardPortfolio, "", pfThumb));
   }
   if (c.showEstudio !== false) {
     cards.push(iconCard("c2", "#/estudio", I.studio, c.cardEstudioTitle || "O Estúdio", c.cardEstudio || "Conheça nosso ambiente, bancada e estrutura.", "", estAlbum?.coverThumb || ""));

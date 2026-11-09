@@ -490,6 +490,117 @@ async function openCustomRouteModal(existing, idx, c, onRefresh) {
   }
 }
 
+/* =============================== CAPA DA CATEGORIA PRINCIPAL (MAQUIAGEM / PENTEADOS / PORTFÓLIO) =============================== */
+function groupCoverKeys(group) {
+  if (group === "maquiagem") return { coverKey: "coverMaquiagem", idKey: "coverMaquiagemPhotoId", label: "Maquiagem" };
+  if (group === "penteados") return { coverKey: "coverPenteados", idKey: "coverPenteadosPhotoId", label: "Penteados" };
+  if (group === "portfolio") return { coverKey: "coverPortfolio", idKey: "coverPortfolioPhotoId", label: "Portfólio" };
+  return null;
+}
+
+function getEffectiveGroupCover(group, c, albums) {
+  const keys = groupCoverKeys(group);
+  if (!keys) return "";
+  const val = c?.[keys.coverKey];
+  if (val === "none") return "";
+  if (val) return val;
+  return albums.find(x => x.group === group && x.coverThumb)?.coverThumb || "";
+}
+
+async function setGroupCover(group, p) {
+  const keys = groupCoverKeys(group);
+  if (!keys) return;
+  const coverThumb = p ? (p.thumbUrl ? p.thumbUrl : await blobToDataURL(await makeCover(p.thumb))) : "none";
+  const photoId = p ? p.id : "";
+  await recordUndo(`Alterar capa principal de ${keys.label}`);
+  const patch = { [keys.coverKey]: coverThumb, [keys.idKey]: photoId };
+  await api.saveContent(patch);
+  if (!loadedContent) loadedContent = { ...DEFAULT_CONTENT };
+  Object.assign(loadedContent, patch);
+  localStorage.removeItem("alm-cache-v1");
+}
+
+async function chooseGroupCoverModal(group, c, onDone) {
+  const keys = groupCoverKeys(group);
+  if (!keys) return;
+  const subAlbums = st.albums.filter(a => a.group === group);
+  let sections = [];
+  try {
+    sections = await Promise.all(subAlbums.map(async a => ({
+      album: a,
+      photos: await api.loadPhotos(a.id).catch(() => [])
+    })));
+  } catch (e) {
+    return toast(errMsg(e), "bad");
+  }
+  const totalPhotos = sections.reduce((acc, s) => acc + s.photos.length, 0);
+  const curId = c?.[keys.idKey] || "";
+  const curCover = getEffectiveGroupCover(group, c, st.albums);
+
+  await modal({
+    title: `Capa Principal de ${keys.label} (na Página Inicial)`,
+    body: `
+      <p style="margin-top:-4px">Escolha qual imagem das subcategorias será a <b>capa da categoria toda de ${esc(keys.label)}</b> na página inicial do site:</p>
+      ${totalPhotos ? sections.map(({ album, photos }) => !photos.length ? "" : `
+        <div style="margin-bottom:14px">
+          <b style="display:block;font-size:.85rem;color:var(--muted);margin-bottom:6px">${esc(album.title)} (${plural(photos.length, "foto", "fotos")})</b>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px">
+            ${photos.map(p => {
+              const src = p.thumbUrl || p.thumb;
+              const isSel = curId === p.id || (!curId && curCover && curCover === src);
+              return `<button type="button" data-pick-pid="${esc(p.id)}" data-pick-aid="${esc(album.id)}" style="position:relative;aspect-ratio:4/5;border-radius:10px;overflow:hidden;border:${isSel ? "3px solid var(--gold)" : "1px solid var(--line)"};padding:0;cursor:pointer;background:#eee">
+                <img src="${esc(src)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">
+                ${isSel ? `<span style="position:absolute;inset:auto 0 0 0;background:rgba(200,169,106,.95);color:#1B1510;font-size:.62rem;font-weight:700;padding:2px 4px;text-align:center">★ Capa atual</span>` : ""}
+              </button>`;
+            }).join("")}
+          </div>
+        </div>
+      `).join("") : `<div class="emptybox" style="margin-bottom:12px">${IC.img}<p>Adicione fotos em alguma subcategoria de <b>${esc(keys.label)}</b> primeiro para poder escolher a capa.</p></div>`}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line)">
+        ${c?.[keys.coverKey] !== "none" ? `<button type="button" class="btn sm" data-pick-none>Usar apenas ícone (sem foto de capa)</button>` : `<span class="hint" style="margin:0">Atualmente usando apenas o ícone dourado (sem foto).</span>`}
+        <button type="button" class="btn sm" data-pick-close>Fechar</button>
+      </div>`,
+    onMount(ov, close) {
+      ov.onclick = async e => {
+        if (e.target.closest("[data-pick-close]")) return close(null);
+        const noneBtn = e.target.closest("[data-pick-none]");
+        if (noneBtn) {
+          await busy(noneBtn, async () => {
+            await setGroupCover(group, null);
+            if (c) { c[keys.coverKey] = "none"; c[keys.idKey] = ""; }
+          });
+          toast(`Capa de ${keys.label} alterada para ícone`);
+          close(true);
+          if (onDone) onDone();
+          return;
+        }
+        const pickBtn = e.target.closest("[data-pick-pid]");
+        if (pickBtn) {
+          const pid = pickBtn.dataset.pickPid;
+          const aid = pickBtn.dataset.pickAid;
+          const sec = sections.find(s => s.album.id === aid);
+          const photo = sec?.photos.find(x => x.id === pid);
+          if (!photo) return;
+          pickBtn.disabled = true;
+          try {
+            await setGroupCover(group, photo);
+            if (c) {
+              c[keys.coverKey] = loadedContent[keys.coverKey];
+              c[keys.idKey] = loadedContent[keys.idKey];
+            }
+            toast(`Foto escolhida como capa principal de ${keys.label}!`);
+            close(true);
+            if (onDone) onDone();
+          } catch (x) {
+            pickBtn.disabled = false;
+            toast(errMsg(x), "bad");
+          }
+        }
+      };
+    }
+  });
+}
+
 /* =============================== FOTOS E ESTÚDIO =============================== */
 const GROUP_ORDER = ["estudio", "portfolio", "maquiagem", "penteados"];
 
@@ -528,6 +639,23 @@ async function viewAlbums() {
       </div>`;
   }
 
+  function renderGroupCoverBar(g) {
+    const keys = groupCoverKeys(g);
+    if (!keys) return "";
+    const coverSrc = getEffectiveGroupCover(g, c, st.albums);
+    const isCustom = !!(c[keys.coverKey] && c[keys.coverKey] !== "none");
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px;border-radius:12px;background:#FBF8F3;border:1px solid #E5DAC8">
+      <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:1">
+        <span class="cov" style="width:44px;height:44px;border-radius:8px;flex-shrink:0;${coverSrc ? `background-image:url('${esc(coverSrc)}')` : ""}">${coverSrc ? "" : IC.img}</span>
+        <div>
+          <b style="display:block;font-size:.86rem">Capa da categoria ${esc(keys.label)} na página inicial ${isCustom ? '<span class="badge">Escolhida por você</span>' : (coverSrc ? '<span class="badge">Automática</span>' : '<span class="badge off">Sem foto</span>')}</b>
+          <small style="display:block;font-size:.75rem;color:var(--muted)">Escolha qual imagem de qualquer subcategoria será a capa principal de <b>${esc(keys.label)}</b>.</small>
+        </div>
+      </div>
+      <button type="button" class="btn sm gold" data-group-cover="${g}">${IC.cover} Escolher capa de ${esc(keys.label)}</button>
+    </div>`;
+  }
+
   const groupRouteKey = { estudio: "showEstudio", portfolio: "showPortfolio", maquiagem: "showMaquiagem", penteados: "showPenteados" };
   const groupRouteTitle = { estudio: "O Estúdio", portfolio: "Portfólio", maquiagem: "Maquiagem", penteados: "Penteados" };
   const customPageAlbums = st.albums.filter(a => a.group === "pagina");
@@ -552,6 +680,7 @@ async function viewAlbums() {
         <ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
       if (g === "portfolio") return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">Portfólio Geral ${statusBadge}</h3>${toggleBtn}</div><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
       return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">${GROUPS[g].label} ${statusBadge}</h3>${toggleBtn}</div>
+        ${renderGroupCoverBar(g)}
         <ul class="albums" data-group="${g}">${list.map(a => item(a, true)).join("")}</ul>
         <button class="btn sm addalbum" data-add="${g}">${IC.plus} Nova categoria em ${GROUPS[g].label}</button>`;
     }).join("")}
@@ -599,6 +728,8 @@ async function viewAlbums() {
 
   content.onclick = async e => {
     if (await handleRouteManagerClick(e, c, viewAlbums)) return;
+    const gcBtn = e.target.closest("[data-group-cover]");
+    if (gcBtn) return chooseGroupCoverModal(gcBtn.dataset.groupCover, c, viewAlbums);
     if (e.target.closest("[data-edit-estudio]")) return editEstudioTexts();
     const add = e.target.closest("[data-add]");
     if (add) return newAlbum(add.dataset.add);
@@ -723,6 +854,7 @@ async function viewAlbum(id) {
   const tk = st.token; loading();
   try {
     if (!st.albums.length) st.albums = await api.loadAlbums();
+    if (!loadedContent) loadedContent = await api.loadContent().catch(() => DEFAULT_CONTENT);
     current = st.albums.find(a => a.id === id);
     if (!current) { location.replace("#fotos"); return; }
     st.photos = await api.loadPhotos(id);
@@ -735,12 +867,18 @@ async function viewAlbum(id) {
   renderAlbum(current);
 }
 
-const tileHtml = (p, i, a) => `<div class="tile" data-id="${esc(p.id)}">
+const tileHtml = (p, i, a) => {
+  const gKeys = groupCoverKeys(a.group);
+  const isGroupCover = gKeys && loadedContent && loadedContent[gKeys.idKey] === p.id;
+  const isSubGroup = a.group === "maquiagem" || a.group === "penteados";
+  return `<div class="tile" data-id="${esc(p.id)}">
   <img src="${esc(p.thumbUrl || p.thumb)}" alt="" loading="lazy">
   ${i === 0 ? '<span class="tag">Destaque</span>' : ""}
-  ${a.group !== "portfolio" && a.coverPhotoId === p.id ? '<span class="tag cv">Capa</span>' : ""}
+  ${a.coverPhotoId === p.id ? `<span class="tag cv">${isSubGroup ? "Capa da subcategoria" : "Capa"}</span>` : ""}
+  ${isGroupCover ? `<span class="tag cv" style="top:auto;bottom:28px;left:6px;background:rgba(200,169,106,.95);color:#1B1510">★ Capa de ${esc(gKeys.label)}</span>` : ""}
   <span class="num">${i + 1}</span>
   <button class="del" type="button" aria-label="Apagar foto">${IC.trash}</button></div>`;
+};
 
 function renderAlbum(a) {
   if (st.tab !== "fotos" || current !== a) return;
@@ -827,7 +965,16 @@ function updateSelbar() {
 async function photoMenu(p) {
   const a = current, i = st.photos.indexOf(p);
   const opts = [];
-  if (a.group !== "portfolio" && a.coverPhotoId !== p.id) opts.push({ label: "Usar como capa da categoria", icon: IC.cover, value: "cover" });
+  const gKeys = groupCoverKeys(a.group);
+  const isSubGroup = a.group === "maquiagem" || a.group === "penteados";
+  if (isSubGroup) {
+    if (a.coverPhotoId !== p.id) opts.push({ label: `Usar como capa desta subcategoria (${a.title})`, icon: IC.cover, value: "cover" });
+    if (!loadedContent || loadedContent[gKeys.idKey] !== p.id) {
+      opts.push({ label: `★ Usar como capa principal de ${gKeys.label} (na página inicial)`, icon: IC.star, value: "groupCover" });
+    }
+  } else if (a.coverPhotoId !== p.id) {
+    opts.push({ label: "Usar como capa desta seção", icon: IC.cover, value: "cover" });
+  }
   if (i > 0) opts.push({ label: "Mover para o início (destaque)", icon: IC.up, value: "first" });
   if (i < st.photos.length - 1) opts.push({ label: "Mover para o fim", icon: IC.down, value: "last" });
   opts.push({ label: "Ajustar enquadramento / cortar", icon: IC.crop, value: "crop" });
@@ -836,7 +983,17 @@ async function photoMenu(p) {
   opts.push({ label: "Apagar foto", icon: IC.trash, value: "delete", cls: "red" });
   const v = await sheet(p.thumbUrl || p.thumb, opts);
   try {
-    if (v === "cover") { await setCover(a, p); toast("Capa atualizada"); renderAlbum(a); }
+    if (v === "cover") {
+      await setCover(a, p);
+      if (a.group === "portfolio") await setGroupCover("portfolio", p);
+      toast(isSubGroup ? `Capa de ${a.title} atualizada!` : "Capa atualizada!");
+      renderAlbum(a);
+    }
+    if (v === "groupCover" && gKeys) {
+      await setGroupCover(a.group, p);
+      toast(`Capa principal de ${gKeys.label} atualizada na página inicial!`);
+      renderAlbum(a);
+    }
     if (v === "first" || v === "last") {
       st.photos.splice(i, 1);
       v === "first" ? st.photos.unshift(p) : st.photos.push(p);
@@ -958,6 +1115,10 @@ async function cropPhoto(p, a) {
   const updated = await api.updatePhoto(p.id, { thumb: thumb.blob, full: full.blob, w: full.w, h: full.h });
   Object.assign(p, updated);
   if (a.coverPhotoId === p.id) await setCover(a, p);
+  const gKeys = groupCoverKeys(a.group);
+  if (gKeys && loadedContent && loadedContent[gKeys.idKey] === p.id) {
+    await setGroupCover(a.group, p);
+  }
   localStorage.removeItem("alm-cache-v1");
   toast("Foto ajustada");
   renderAlbum(a);
@@ -980,7 +1141,6 @@ async function setCover(a, p) {
   a.coverThumb = coverThumb; a.coverPhotoId = p.id;
 }
 async function fixCover(a) {
-  if (a.group === "portfolio") return;
   if (a.coverPhotoId && st.photos.some(p => p.id === a.coverPhotoId)) return;
   if (st.photos.length) await setCover(a, st.photos[0]);
   else if (a.coverThumb || a.coverPhotoId) { await api.saveAlbum({ id: a.id, coverThumb: "", coverPhotoId: "" }); a.coverThumb = ""; a.coverPhotoId = ""; }
@@ -999,6 +1159,12 @@ async function deletePhotos(list) {
     st.photos = st.photos.filter(p => !ids.has(p.id));
     a.count = st.photos.length;
     await fixCover(a);
+    const gKeys = groupCoverKeys(a.group);
+    if (gKeys && loadedContent && ids.has(loadedContent[gKeys.idKey])) {
+      await api.saveContent({ [gKeys.coverKey]: "", [gKeys.idKey]: "" });
+      loadedContent[gKeys.coverKey] = "";
+      loadedContent[gKeys.idKey] = "";
+    }
     localStorage.removeItem("alm-cache-v1");
     toast(list.length === 1 ? "Foto apagada" : `${list.length} fotos apagadas`);
   } catch (e) { toast(errMsg(e), "bad"); }
