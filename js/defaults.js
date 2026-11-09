@@ -24,15 +24,19 @@ export const DEFAULT_CONTENT = {
   address: "",
   hours: "A definir",
 
-  // Página inicial e Botões
+  // Página inicial e Botões / Visibilidade das Rotas
   homeExploreSub: "Explore",
   homeExploreTitle: "Serviços & Portfólio",
+  showAgendamentos: true,
   cardAgendamentosTitle: "Agendamentos",
   cardAgendamentos: "Studio Anna Lívia Makeup",
+  showMaquiagem: true,
   cardMaquiagemTitle: "Maquiagem",
   cardMaquiagem: "Noivas, debutantes, pré-wedding e formaturas.",
+  showPenteados: true,
   cardPenteadosTitle: "Penteados",
   cardPenteados: "Coque, tranças, semipreso e ondas.",
+  showPortfolio: true,
   cardPortfolioTitle: "Portfólio",
   cardPortfolio: "Trabalhos realizados.",
   showEstudio: true,
@@ -42,8 +46,10 @@ export const DEFAULT_CONTENT = {
   cardCursosTitle: "Cursos",
   cardCursos: "Aprenda a se maquiar com a Anna.",
   cursosSoonBadge: "EM BREVE",
+  showLocalizacao: true,
   cardLocalizacaoTitle: "Localização",
   cardLocalizacao: "Como chegar ao estúdio.",
+  customRoutes: [],
 
   // O Estúdio (Ambiente, bancada e estrutura)
   estudioTitle: "Nosso Estúdio",
@@ -118,8 +124,19 @@ export const GROUPS = {
   estudio: { label: "O Estúdio", cta: "Agendar horário no estúdio", prefix: "Estúdio" },
   maquiagem: { label: "Maquiagem", cta: "Agendar maquiagem", prefix: "Maquiagem" },
   penteados: { label: "Penteados", cta: "Agendar penteado", prefix: "Penteado" },
-  portfolio: { label: "Portfólio", cta: "Quero uma produção assim", prefix: "Portfólio" }
+  portfolio: { label: "Portfólio", cta: "Quero uma produção assim", prefix: "Portfólio" },
+  pagina: { label: "Páginas Extras", cta: "Agendar pelo WhatsApp", prefix: "Página" }
 };
+
+export const SITE_ROUTES = [
+  { key: "showMaquiagem", id: "maquiagem", titleKey: "cardMaquiagemTitle", subKey: "cardMaquiagem", defaultTitle: "Maquiagem", desc: "Menu superior + Card na página inicial + Galerias de Maquiagem", inTopMenu: true },
+  { key: "showPenteados", id: "penteados", titleKey: "cardPenteadosTitle", subKey: "cardPenteados", defaultTitle: "Penteados", desc: "Menu superior + Card na página inicial + Galerias de Penteados", inTopMenu: true },
+  { key: "showPortfolio", id: "portfolio", titleKey: "cardPortfolioTitle", subKey: "cardPortfolio", defaultTitle: "Portfólio", desc: "Menu superior + Card na página inicial + Galeria de Portfólio", inTopMenu: true },
+  { key: "showEstudio", id: "estudio", titleKey: "cardEstudioTitle", subKey: "cardEstudio", defaultTitle: "O Estúdio", desc: "Menu superior + Card na página inicial + Página de fotos e textos do Estúdio", inTopMenu: true },
+  { key: "showCursos", id: "cursos", titleKey: "cardCursosTitle", subKey: "cardCursos", defaultTitle: "Cursos", desc: "Menu superior + Card na página inicial + Página de Cursos", inTopMenu: true },
+  { key: "showLocalizacao", id: "localizacao", titleKey: "cardLocalizacaoTitle", subKey: "cardLocalizacao", defaultTitle: "Localização", desc: "Menu superior + Card na página inicial + Mapa e Contatos", inTopMenu: true },
+  { key: "showAgendamentos", id: "agendamentos", titleKey: "cardAgendamentosTitle", subKey: "cardAgendamentos", defaultTitle: "Agendamentos", desc: "Botão do topo + Card na página inicial + Passo a passo de agendamento", inTopMenu: false }
+];
 
 export const DEFAULT_ALBUMS = [
   { id: "noivas", group: "maquiagem", title: "Noivas", subtitle: "Para o grande dia",

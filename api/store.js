@@ -20,12 +20,16 @@ const DEFAULT_CONTENT = {
   hours: "A definir",
   homeExploreSub: "Explore",
   homeExploreTitle: "Serviços & Portfólio",
+  showAgendamentos: true,
   cardAgendamentosTitle: "Agendamentos",
   cardAgendamentos: "Studio Anna Lívia Makeup",
+  showMaquiagem: true,
   cardMaquiagemTitle: "Maquiagem",
   cardMaquiagem: "Noivas, debutantes, pré-wedding e formaturas.",
+  showPenteados: true,
   cardPenteadosTitle: "Penteados",
   cardPenteados: "Coque, tranças, semipreso e ondas.",
+  showPortfolio: true,
   cardPortfolioTitle: "Portfólio",
   cardPortfolio: "Trabalhos realizados.",
   showEstudio: true,
@@ -35,8 +39,10 @@ const DEFAULT_CONTENT = {
   cardCursosTitle: "Cursos",
   cardCursos: "Aprenda a se maquiar com a Anna.",
   cursosSoonBadge: "EM BREVE",
+  showLocalizacao: true,
   cardLocalizacaoTitle: "Localização",
   cardLocalizacao: "Como chegar ao estúdio.",
+  customRoutes: [],
   estudioTitle: "Nosso Estúdio",
   estudioIntro: "Um espaço pensado em cada detalhe para receber você com conforto, calma e exclusividade.",
   estudioText:
@@ -195,6 +201,7 @@ async function getState() {
   const s = await readJsonBlob(STATE_PATH, defaultState);
   s.content = { ...DEFAULT_CONTENT, ...(s.content || {}) };
   if (!Array.isArray(s.content.courses)) s.content.courses = [];
+  if (!Array.isArray(s.content.customRoutes)) s.content.customRoutes = [];
   s.media = { hero: "", about: "", ...(s.media || {}) };
   const albums = (s.albums && s.albums.length ? s.albums : DEFAULT_ALBUMS).slice();
   ["portfolio", "estudio"].forEach(reqId => {

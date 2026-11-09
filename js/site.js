@@ -1,5 +1,5 @@
 import { getContent, getMedia, listAlbums, listPhotos, getFullImage, thumbSrc, fetchCloudState } from "./public-api.js";
-import { DEFAULT_CONTENT, DEFAULT_ALBUMS, GROUPS } from "./defaults.js";
+import { DEFAULT_CONTENT, DEFAULT_ALBUMS, GROUPS, SITE_ROUTES } from "./defaults.js";
 
 const $ = s => document.querySelector(s);
 const view = $("#view"), shell = $("#shell"), hero = $("#hero");
@@ -65,33 +65,64 @@ function getActiveCourses() {
 }
 
 /* ---------------- páginas ---------------- */
+function getActiveCustomRoutes() {
+  const list = Array.isArray(S?.content?.customRoutes) ? S.content.customRoutes : [];
+  return list.filter(r => r && r.active !== false && String(r.title || "").trim());
+}
+
 function pageHome() {
   const c = S.content;
   const aboutSrc = S.media.about || "imagens/capa.jpg";
   const about = `<div class="slot has-img"><img src="${esc(aboutSrc)}" alt="${esc(c.aboutSignature)}"></div>`;
   const estAlbum = S.albums.find(x => x.id === "estudio" || x.group === "estudio");
-  const estudioCard = c.showEstudio !== false
-    ? iconCard("c2", "#/estudio", I.studio, c.cardEstudioTitle || "O Estúdio", c.cardEstudio || "Conheça nosso ambiente, bancada e estrutura.", "", estAlbum?.coverThumb || "")
-    : "";
   const activeCourses = getActiveCourses();
   const isCursosSoon = activeCourses.length === 0;
-  const cursos = c.showCursos !== false
-    ? iconCard("c5", "#/cursos", I.cap, c.cardCursosTitle || "Cursos", c.cardCursos, isCursosSoon ? `<span class="soon">${esc(c.cursosSoonBadge || "EM BREVE")}</span>` : "") : "";
+
+  const cards = [];
+  if (c.showAgendamentos !== false) {
+    cards.push(iconCard("c1", "#/agendamentos", I.cal, c.cardAgendamentosTitle || "Agendamentos", c.cardAgendamentos));
+  }
+  if (c.showMaquiagem !== false) {
+    cards.push(iconCard("c2", "#/maquiagem", I.brush, c.cardMaquiagemTitle || "Maquiagem", c.cardMaquiagem));
+  }
+  if (c.showPenteados !== false) {
+    cards.push(iconCard("c3", "#/penteados", I.hair, c.cardPenteadosTitle || "Penteados", c.cardPenteados));
+  }
+  if (c.showPortfolio !== false) {
+    cards.push(iconCard("c4", "#/portfolio", I.photo, c.cardPortfolioTitle || "Portfólio", c.cardPortfolio));
+  }
+  if (c.showEstudio !== false) {
+    cards.push(iconCard("c2", "#/estudio", I.studio, c.cardEstudioTitle || "O Estúdio", c.cardEstudio || "Conheça nosso ambiente, bancada e estrutura.", "", estAlbum?.coverThumb || ""));
+  }
+  if (c.showCursos !== false) {
+    cards.push(iconCard("c5", "#/cursos", I.cap, c.cardCursosTitle || "Cursos", c.cardCursos, isCursosSoon ? `<span class="soon">${esc(c.cursosSoonBadge || "EM BREVE")}</span>` : ""));
+  }
+  if (c.showLocalizacao !== false) {
+    cards.push(iconCard("c6", "#/localizacao", I.map, c.cardLocalizacaoTitle || "Localização", c.cardLocalizacao));
+  }
+
+  getActiveCustomRoutes().forEach((cr, idx) => {
+    const cls = `c${((idx + 2) % 6) + 1}`;
+    if (cr.type === "link") {
+      const rawUrl = String(cr.url || "").trim();
+      const href = rawUrl ? (/^(https?:\/\/|#|mailto:|tel:)/i.test(rawUrl) ? rawUrl : "https://" + rawUrl) : wa(`Olá, Anna! Gostaria de saber mais sobre: ${cr.title}.`);
+      const extAttr = /^https?:\/\//i.test(href) ? ' target="_blank" rel="noopener"' : "";
+      cards.push(`<a class="card ${cls}" href="${esc(href)}"${extAttr}><div class="lead"><span class="ic">${I.spark}</span></div>${I.curve}<div class="txt"><h2>${esc(cr.title)}</h2><span class="sub">${esc(cr.subtitle || "Toque para acessar")}</span></div><span class="go" aria-hidden="true">${I.arrow}</span></a>`);
+    } else {
+      const crAlbum = S.albums.find(x => x.id === cr.id);
+      cards.push(iconCard(cls, `#/pagina/${encodeURIComponent(cr.id)}`, I.spark, cr.title, cr.subtitle || "Veja fotos e detalhes.", "", crAlbum?.coverThumb || ""));
+    }
+  });
+
   return `
   <section class="sec home-about">
     <h2>${esc(c.aboutTitle)}</h2><div class="line"></div>
     <div class="about">${about}<div>${paras(c.aboutText)}<b>${esc(c.aboutSignature)}</b></div></div>
   </section>
-  <div class="sec-head"><span>${esc(c.homeExploreSub || "Explore")}</span><h2>${esc(c.homeExploreTitle || "Serviços & Portfólio")}</h2></div>
+  ${cards.length ? `<div class="sec-head"><span>${esc(c.homeExploreSub || "Explore")}</span><h2>${esc(c.homeExploreTitle || "Serviços & Portfólio")}</h2></div>
   <nav class="links" aria-label="Páginas">
-    ${iconCard("c1", "#/agendamentos", I.cal, c.cardAgendamentosTitle || "Agendamentos", c.cardAgendamentos)}
-    ${iconCard("c2", "#/maquiagem", I.brush, c.cardMaquiagemTitle || "Maquiagem", c.cardMaquiagem)}
-    ${iconCard("c3", "#/penteados", I.hair, c.cardPenteadosTitle || "Penteados", c.cardPenteados)}
-    ${iconCard("c4", "#/portfolio", I.photo, c.cardPortfolioTitle || "Portfólio", c.cardPortfolio)}
-    ${estudioCard}
-    ${cursos}
-    ${iconCard("c6", "#/localizacao", I.map, c.cardLocalizacaoTitle || "Localização", c.cardLocalizacao)}
-  </nav>`;
+    ${cards.join("\n    ")}
+  </nav>` : ""}`;
 }
 
 function pageAgendamentos() {
@@ -148,7 +179,7 @@ function pageAlbum(a) {
   const isPf = a.group === "portfolio";
   const intro = isPf ? c.portfolioIntro : a.description;
   const ctaLabel = isPf ? (c.portfolioCta || g.cta) : (c[a.group + "Cta"] || g.cta);
-  const cta = isPf
+  const cta = (isPf && c.showAgendamentos !== false)
     ? `<a class="btn" href="#/agendamentos">${esc(ctaLabel)}</a>`
     : btnWa(ctaLabel, `Olá, Anna! Gostaria de agendar: ${g.prefix} – ${a.title}.`);
   return `${topbar(isPf ? "#/" : "#/" + a.group)}
@@ -156,6 +187,23 @@ function pageAlbum(a) {
   <section class="sec">
     ${intro ? `<p class="note">${esc(intro)}</p>` : ""}
     <div class="gallery" id="gallery" data-album="${esc(a.id)}">${'<div class="ph skel"></div>'.repeat(5)}</div>
+    <div class="center btns">${cta}${btnIg()}</div>
+  </section>`;
+}
+
+function pageCustomRoute(cr) {
+  const album = S.albums.find(x => x.id === cr.id);
+  const desc = cr.description || album?.description || "";
+  const ctaLabel = cr.ctaLabel || "Entrar em contato pelo WhatsApp";
+  const rawLink = String(cr.url || "").trim();
+  const cta = rawLink
+    ? `<a class="btn" href="${esc(/^https?:\/\//i.test(rawLink) ? rawLink : "https://" + rawLink)}" target="_blank" rel="noopener">${esc(ctaLabel)} ${I.arrow}</a>`
+    : btnWa(ctaLabel, `Olá, Anna! Gostaria de saber mais sobre: ${cr.title}.`);
+  return `${topbar("#/")}
+  <h1 class="ptitle">${esc(cr.title)}</h1>
+  <section class="sec">
+    ${desc ? `<div class="studio-story">${paras(desc)}</div>` : (cr.subtitle ? `<p class="note">${esc(cr.subtitle)}</p>` : "")}
+    <div class="gallery" id="gallery" data-album="${esc(cr.id)}">${'<div class="ph skel"></div>'.repeat(4)}</div>
     <div class="center btns">${cta}${btnIg()}</div>
   </section>`;
 }
@@ -342,34 +390,72 @@ function applyChrome() {
   $("#social").innerHTML =
     (igHandle() ? `<a href="${igUrl()}" target="_blank" rel="noopener" aria-label="Instagram @${esc(igHandle())}">${I.ig}<span>@${esc(igHandle())}</span></a>` : "") +
     (waNumber(c.whatsapp) ? `<a href="${wa()}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.whatsapp)}">${I.wa}<span>${esc(c.whatsapp)}</span></a>` : "");
-  const navEstudio = $("#navEstudio");
-  if (navEstudio) navEstudio.hidden = c.showEstudio === false;
-  const navCursos = $("#navCursos");
-  if (navCursos) navCursos.hidden = c.showCursos === false;
+
+  const deskMenu = $("#deskMenu");
+  if (deskMenu) {
+    const links = [`<a href="#/" data-nav="">Início</a>`];
+    SITE_ROUTES.forEach(r => {
+      if (!r.inTopMenu || c[r.key] === false) return;
+      const label = c[r.titleKey] || r.defaultTitle;
+      links.push(`<a href="#/${r.id}" data-nav="${r.id}">${esc(label)}</a>`);
+    });
+    getActiveCustomRoutes().forEach(cr => {
+      if (cr.inTopMenu === false) return;
+      if (cr.type === "link") {
+        const rawUrl = String(cr.url || "").trim();
+        const href = rawUrl ? (/^(https?:\/\/|#|mailto:|tel:)/i.test(rawUrl) ? rawUrl : "https://" + rawUrl) : wa(`Olá, Anna! Gostaria de saber mais sobre: ${cr.title}.`);
+        const ext = /^https?:\/\//i.test(href) ? ' target="_blank" rel="noopener"' : "";
+        links.push(`<a href="${esc(href)}"${ext}>${esc(cr.title)}</a>`);
+      } else {
+        links.push(`<a href="#/pagina/${encodeURIComponent(cr.id)}" data-nav="pagina/${esc(cr.id)}">${esc(cr.title)}</a>`);
+      }
+    });
+    deskMenu.innerHTML = links.join("");
+  }
+
+  const navCta = $(".nav-cta");
+  const heroCta = $("#hero .cta");
+  if (c.showAgendamentos === false) {
+    const waHref = wa(c.bookingWaMsg || "Olá, Anna! Gostaria de agendar um horário.");
+    if (navCta) { navCta.href = waHref; navCta.target = "_blank"; navCta.rel = "noopener"; }
+    if (heroCta) { heroCta.href = waHref; heroCta.target = "_blank"; heroCta.rel = "noopener"; }
+  } else {
+    if (navCta) { navCta.href = "#/agendamentos"; navCta.removeAttribute("target"); navCta.removeAttribute("rel"); }
+    if (heroCta) { heroCta.href = "#/agendamentos"; heroCta.removeAttribute("target"); heroCta.removeAttribute("rel"); }
+  }
+
   $("#year").textContent = new Date().getFullYear();
 }
 
 /* ---------------- rotas ---------------- */
 function route() {
   if (!S) return;
+  const c = S.content;
   const key = decodeURIComponent(location.hash.replace(/^#\/?/, "").replace(/\/$/, ""));
   if (key === "acesso" || key === "painel" || key === "acesso-anna") { location.href = "painel/"; return; }
   const [a, b] = key.split("/");
   let html, title = "", album = null, galleryAlbumId = "";
   if (!a) html = pageHome();
-  else if (a === "agendamentos") { html = pageAgendamentos(); title = S.content.bookingTitle || "Agendamentos"; }
-  else if (a === "estudio" && S.content.showEstudio !== false) { html = pageEstudio(); title = S.content.estudioTitle || "Nosso Estúdio"; galleryAlbumId = "estudio"; }
-  else if (a === "cursos" && S.content.showCursos !== false) { html = pageCursos(); title = S.content.cursosTitle || "Cursos"; }
-  else if (a === "localizacao") { html = pageLocalizacao(); title = S.content.cardLocalizacaoTitle || "Localização"; }
-  else if (a === "portfolio") { album = S.albums.find(x => x.group === "portfolio" || x.id === "portfolio"); }
-  else if ((a === "maquiagem" || a === "penteados") && !b) { html = pageGroup(a); title = S.content[a + "Title"] || GROUPS[a].label; }
-  else if ((a === "maquiagem" || a === "penteados") && b) { album = S.albums.find(x => x.group === a && x.id === b); }
+  else if (a === "agendamentos" && c.showAgendamentos !== false) { html = pageAgendamentos(); title = c.bookingTitle || "Agendamentos"; }
+  else if (a === "estudio" && c.showEstudio !== false) { html = pageEstudio(); title = c.estudioTitle || "Nosso Estúdio"; galleryAlbumId = "estudio"; }
+  else if (a === "cursos" && c.showCursos !== false) { html = pageCursos(); title = c.cursosTitle || "Cursos"; }
+  else if (a === "localizacao" && c.showLocalizacao !== false) { html = pageLocalizacao(); title = c.cardLocalizacaoTitle || "Localização"; }
+  else if (a === "portfolio" && c.showPortfolio !== false) { album = S.albums.find(x => x.group === "portfolio" || x.id === "portfolio"); }
+  else if (a === "maquiagem" && c.showMaquiagem !== false && !b) { html = pageGroup(a); title = c.maquiagemTitle || GROUPS[a].label; }
+  else if (a === "maquiagem" && c.showMaquiagem !== false && b) { album = S.albums.find(x => x.group === a && x.id === b); }
+  else if (a === "penteados" && c.showPenteados !== false && !b) { html = pageGroup(a); title = c.penteadosTitle || GROUPS[a].label; }
+  else if (a === "penteados" && c.showPenteados !== false && b) { album = S.albums.find(x => x.group === a && x.id === b); }
+  else if (a === "pagina" && b) {
+    const cr = getActiveCustomRoutes().find(x => x.id === b && x.type !== "link");
+    if (cr) { html = pageCustomRoute(cr); title = cr.title; galleryAlbumId = cr.id; }
+  }
   if (album) { html = pageAlbum(album); title = album.title; galleryAlbumId = album.id; }
   if (!html) { if (key) { location.replace("#/"); return; } html = pageHome(); }
 
   shell.classList.toggle("is-home", !a);
+  const activeNav = a === "pagina" && b ? `pagina/${b}` : (a || "");
   document.querySelectorAll("#deskMenu a[data-nav]").forEach(link => {
-    link.classList.toggle("active", link.dataset.nav === (a || ""));
+    link.classList.toggle("active", link.dataset.nav === activeNav);
   });
   view.innerHTML = `<div class="page enter">${html}</div>`;
   document.title = title ? `${title} | ${NAME}` : NAME;

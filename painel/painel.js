@@ -1,5 +1,5 @@
 import { api, MODE, errMsg, blobToDataURL } from "./admin-api.js";
-import { CONTENT_FORM, GROUPS, THEME_COLORS, DEFAULT_CONTENT } from "../js/defaults.js";
+import { CONTENT_FORM, GROUPS, THEME_COLORS, DEFAULT_CONTENT, SITE_ROUTES } from "../js/defaults.js";
 import { processPhoto, makeCover, processSiteImage, loadImage, compressCanvas } from "./image.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -267,6 +267,229 @@ function heroPreviewHtml(src, c = DEFAULT_CONTENT) {
   </div>`;
 }
 
+/* =============================== GERENCIADOR DE ROTAS E MENU DO TOPO =============================== */
+function renderRoutesManagerHtml(c) {
+  const customRoutes = Array.isArray(c.customRoutes) ? c.customRoutes : [];
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <div>
+        <b style="display:block;font-size:.98rem;color:var(--ink)">Menu do Topo e Rotas do Site (Ativar, Desativar ou Adicionar)</b>
+        <span class="hint" style="margin:2px 0 0">Desative qualquer rota (como <b>Portfólio</b>, <b>O Estúdio</b> ou <b>Cursos</b>) para ocultá-la do site sem perder as fotos, e reative quando quiser com 1 clique. Você também pode criar novas rotas no topo do site!</span>
+      </div>
+      <button type="button" class="btn gold sm" data-route-add>${IC.plus} Nova rota no topo do site</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-top:10px">
+      ${SITE_ROUTES.map(r => {
+        const on = c[r.key] !== false;
+        const label = c[r.titleKey] || r.defaultTitle;
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;border-radius:10px;border:1px solid ${on ? "#DCD2C2" : "#E8D5D5"};background:${on ? "#fff" : "#FAF3F3"}">
+          <div style="min-width:0">
+            <b style="display:block;font-size:.86rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</b>
+            <small style="font-size:.72rem;color:${on ? "#255830" : "#8B2C2C"}">${on ? "✓ Visível no site e menu" : "✕ Desativada (oculta no site)"}</small>
+          </div>
+          <button type="button" class="btn sm ${on ? "danger" : "primary"}" data-route-toggle="${esc(r.key)}" data-route-label="${esc(label)}">${on ? "Desativar" : "Reativar"}</button>
+        </div>`;
+      }).join("")}
+    </div>
+    ${customRoutes.length ? `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+        <b style="display:block;font-size:.86rem;margin-bottom:8px">Rotas / Páginas Personalizadas Criadas por Você</b>
+        <div style="display:grid;gap:8px">
+          ${customRoutes.map((cr, idx) => {
+            const on = cr.active !== false;
+            const isLink = cr.type === "link";
+            const alb = st.albums.find(a => a.id === cr.id);
+            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;border:1px solid ${on ? "#DCD2C2" : "#E8D5D5"};background:${on ? "#fff" : "#FAF3F3"}">
+              <div style="min-width:180px;flex:1">
+                <b style="font-size:.9rem">${esc(cr.title)} ${on ? '<span class="badge">Visível no site</span>' : '<span class="badge off">Desativada</span>'}</b>
+                <small style="display:block;font-size:.75rem;color:var(--muted)">${isLink ? `Link externo: ${esc(cr.url || "WhatsApp")}` : `Página com galeria no site (#/pagina/${esc(cr.id)}) · ${plural(alb?.count || 0, "foto", "fotos")}`}</small>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                ${!isLink ? `<a class="btn sm gold" href="#fotos/${encodeURIComponent(cr.id)}">${IC.img} Fotos (${alb?.count || 0})</a>` : ""}
+                <button type="button" class="btn sm" data-croute-edit="${idx}">${IC.edit} Editar</button>
+                <button type="button" class="btn sm ${on ? "" : "primary"}" data-croute-toggle="${idx}">${on ? "Desativar" : "Reativar"}</button>
+                <button type="button" class="btn sm danger" data-croute-del="${idx}" title="Apagar rota">${IC.trash}</button>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>` : ""}`;
+}
+
+async function handleRouteManagerClick(e, c, onRefresh) {
+  const toggleBtn = e.target.closest("[data-route-toggle]");
+  if (toggleBtn) {
+    const key = toggleBtn.dataset.routeToggle;
+    const label = toggleBtn.dataset.routeLabel || key;
+    const nextVal = c[key] === false ? true : false;
+    await busy(toggleBtn, async () => {
+      try {
+        await recordUndo(`${nextVal ? "Reativar" : "Desativar"} rota ${label}`);
+        await api.saveContent({ [key]: nextVal });
+        c[key] = nextVal;
+        if (loadedContent) loadedContent[key] = nextVal;
+        const tf = $("#txtForm");
+        if (tf && tf.elements[key]) tf.elements[key].checked = nextVal;
+        localStorage.removeItem("alm-cache-v1");
+        toast(nextVal ? `Rota “${label}” reativada no site!` : `Rota “${label}” desativada e ocultada do site!`);
+        await onRefresh();
+      } catch (x) { toast(errMsg(x), "bad"); }
+    });
+    return true;
+  }
+  if (e.target.closest("[data-route-add]")) {
+    await openCustomRouteModal(null, -1, c, onRefresh);
+    return true;
+  }
+  const crEdit = e.target.closest("[data-croute-edit]");
+  if (crEdit) {
+    const idx = +crEdit.dataset.crouteEdit;
+    const list = Array.isArray(c.customRoutes) ? c.customRoutes : [];
+    if (list[idx]) await openCustomRouteModal(list[idx], idx, c, onRefresh);
+    return true;
+  }
+  const crToggle = e.target.closest("[data-croute-toggle]");
+  if (crToggle) {
+    const idx = +crToggle.dataset.crouteToggle;
+    const list = Array.isArray(c.customRoutes) ? [...c.customRoutes] : [];
+    if (!list[idx]) return true;
+    await busy(crToggle, async () => {
+      try {
+        list[idx] = { ...list[idx], active: list[idx].active === false ? true : false };
+        await recordUndo(`${list[idx].active ? "Reativar" : "Desativar"} rota ${list[idx].title}`);
+        await api.saveContent({ customRoutes: list });
+        c.customRoutes = list;
+        if (loadedContent) loadedContent.customRoutes = list;
+        localStorage.removeItem("alm-cache-v1");
+        toast(list[idx].active ? `Rota “${list[idx].title}” reativada no site!` : `Rota “${list[idx].title}” desativada no site!`);
+        await onRefresh();
+      } catch (x) { toast(errMsg(x), "bad"); }
+    });
+    return true;
+  }
+  const crDel = e.target.closest("[data-croute-del]");
+  if (crDel) {
+    const idx = +crDel.dataset.crouteDel;
+    const list = Array.isArray(c.customRoutes) ? [...c.customRoutes] : [];
+    const target = list[idx];
+    if (!target) return true;
+    if (!(await confirmBox("Apagar rota?", `A rota <b>${esc(target.title)}</b> sairá do menu e do site. (Se quiser apenas esconder temporariamente, use o botão <b>Desativar</b>).`, "Apagar", true))) return true;
+    await busy(crDel, async () => {
+      try {
+        await recordUndo(`Apagar rota ${target.title}`);
+        list.splice(idx, 1);
+        await api.saveContent({ customRoutes: list });
+        if (target.type !== "link" && st.albums.some(a => a.id === target.id)) {
+          await api.deleteAlbum(target.id);
+          st.albums = st.albums.filter(a => a.id !== target.id);
+        }
+        c.customRoutes = list;
+        if (loadedContent) loadedContent.customRoutes = list;
+        localStorage.removeItem("alm-cache-v1");
+        toast("Rota apagada");
+        await onRefresh();
+      } catch (x) { toast(errMsg(x), "bad"); }
+    });
+    return true;
+  }
+  return false;
+}
+
+async function openCustomRouteModal(existing, idx, c, onRefresh) {
+  const isNew = !existing;
+  const cr = existing ? { ...existing } : {
+    id: "",
+    title: "",
+    subtitle: "",
+    description: "",
+    type: "page",
+    url: "",
+    ctaLabel: "Agendar pelo WhatsApp",
+    inTopMenu: true,
+    active: true
+  };
+
+  const savedId = await modal({
+    title: isNew ? "Nova Rota / Página no Topo do Site" : `Editar Rota: ${cr.title}`,
+    body: `
+      ${field("title", "Nome no menu do topo e no cartão *", "text", cr.title, "Ex.: Dia da Noiva, Depoimentos, Produtos, Antes & Depois…", 'maxlength="40"')}
+      <label>Tipo de rota
+        <select name="type" id="crTypeSel">
+          <option value="page" ${cr.type !== "link" ? "selected" : ""}>Página dentro do site (com fotos, texto e botão)</option>
+          <option value="link" ${cr.type === "link" ? "selected" : ""}>Link direto (abre um site externo, Instagram ou WhatsApp)</option>
+        </select>
+      </label>
+      ${field("subtitle", "Subtítulo (aparece no cartão da página inicial)", "text", cr.subtitle || "", "Ex.: Conheça nossos pacotes especiais", 'maxlength="80"')}
+      <div id="crPageFields" ${cr.type === "link" ? "hidden" : ""}>
+        ${field("description", "Texto / Descrição da página (aparece acima das fotos)", "textarea", cr.description || "")}
+        ${field("ctaLabel", "Texto do botão no final da página", "text", cr.ctaLabel || "Agendar pelo WhatsApp")}
+      </div>
+      ${field("url", "Link de destino (opcional para página; obrigatório para Link direto)", "text", cr.url || "", "Deixe vazio para o botão abrir direto o seu WhatsApp.")}
+      ${field("inTopMenu", "Mostrar no menu do topo do site", "checkbox", cr.inTopMenu !== false)}
+      ${field("active", "Rota ativa (visível no site)", "checkbox", cr.active !== false)}`,
+    actions: [{ label: "Cancelar", value: null }, {
+      label: isNew ? "Criar rota no site" : "Salvar rota", cls: "primary", primary: true, run: async f => {
+        const title = fv(f, "title");
+        if (!title) throw { friendly: "Digite o nome da rota." };
+        const type = f.elements.type.value;
+        const id = cr.id || uniqueId(title);
+        const updated = {
+          id,
+          title,
+          type,
+          subtitle: fv(f, "subtitle"),
+          description: fv(f, "description"),
+          ctaLabel: fv(f, "ctaLabel") || "Agendar pelo WhatsApp",
+          url: fv(f, "url"),
+          inTopMenu: f.elements.inTopMenu.checked,
+          active: f.elements.active.checked
+        };
+        const list = Array.isArray(c.customRoutes) ? [...c.customRoutes] : [];
+        if (isNew) list.push(updated);
+        else if (idx >= 0) list[idx] = updated;
+
+        await recordUndo(isNew ? `Criar rota ${title}` : `Editar rota ${title}`);
+        await api.saveContent({ customRoutes: list });
+        c.customRoutes = list;
+        if (loadedContent) loadedContent.customRoutes = list;
+
+        if (type === "page") {
+          const existingAlb = st.albums.find(a => a.id === id);
+          if (!existingAlb) {
+            const newAlb = {
+              id,
+              group: "pagina",
+              title,
+              subtitle: updated.subtitle,
+              description: updated.description,
+              order: Math.max(0, ...st.albums.map(x => x.order || 0)) + 1,
+              count: 0,
+              coverThumb: "",
+              coverPhotoId: ""
+            };
+            await api.saveAlbum(newAlb);
+            st.albums.push(newAlb);
+          } else {
+            await api.saveAlbum({ id, title, subtitle: updated.subtitle, description: updated.description });
+            Object.assign(existingAlb, { title, subtitle: updated.subtitle, description: updated.description });
+          }
+        }
+        localStorage.removeItem("alm-cache-v1");
+        return { id, type, isNew };
+      }
+    }],
+    onMount(ov) {
+      const sel = $("#crTypeSel", ov), pf = $("#crPageFields", ov);
+      if (sel && pf) sel.onchange = () => { pf.hidden = sel.value === "link"; };
+    }
+  });
+
+  if (savedId) {
+    toast(savedId.isNew ? "Nova rota criada no site!" : "Rota atualizada no site!");
+    await onRefresh();
+  }
+}
+
 /* =============================== FOTOS E ESTÚDIO =============================== */
 const GROUP_ORDER = ["estudio", "portfolio", "maquiagem", "penteados"];
 
@@ -276,6 +499,7 @@ async function viewAlbums() {
   try { [st.albums, m, c] = await Promise.all([api.loadAlbums(), api.loadMedia().catch(() => ({})), api.loadContent().catch(() => DEFAULT_CONTENT)]); } catch (e) { return failView(e); }
   if (tk !== st.token) return;
   media = m || {};
+  loadedContent = c;
   let stagedHero = null;
 
   const item = (a, drag) => `<li class="album" data-id="${esc(a.id)}">
@@ -304,22 +528,35 @@ async function viewAlbums() {
       </div>`;
   }
 
+  const groupRouteKey = { estudio: "showEstudio", portfolio: "showPortfolio", maquiagem: "showMaquiagem", penteados: "showPenteados" };
+  const groupRouteTitle = { estudio: "O Estúdio", portfolio: "Portfólio", maquiagem: "Maquiagem", penteados: "Penteados" };
+  const customPageAlbums = st.albums.filter(a => a.group === "pagina");
+
   content.innerHTML = `
-    <div class="panel" id="quickHeroBox" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:24px;background:#FBF8F3;border-color:#E5DAC8">
+    <div class="panel" id="quickHeroBox" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:16px;background:#FBF8F3;border-color:#E5DAC8">
       ${renderQuickHero()}
+    </div>
+    <div class="panel" id="routesMgrBox" style="margin-bottom:24px">
+      ${renderRoutesManagerHtml(c)}
     </div>
     <h2 class="title">Fotos do Estúdio e Galerias</h2>
     <p class="help">Toque em <b>O Estúdio</b> ou em qualquer categoria abaixo para adicionar fotos, apagar ou mudar a ordem.</p>
     ${GROUP_ORDER.map(g => {
       const list = st.albums.filter(a => a.group === g);
-      if (g === "estudio") return `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap"><h3 class="group" style="margin-bottom:8px">O Estúdio (Ambiente, Bancada e Estrutura)</h3><button type="button" class="btn sm" data-edit-estudio>${IC.edit} Editar textos do Estúdio</button></div>
+      const rKey = groupRouteKey[g];
+      const isOn = c[rKey] !== false;
+      const statusBadge = isOn ? `<span class="badge">Ativa no site</span>` : `<span class="badge off">Desativada no site (oculta)</span>`;
+      const toggleBtn = `<button type="button" class="btn sm ${isOn ? "" : "primary"}" data-route-toggle="${rKey}" data-route-label="${groupRouteTitle[g]}">${isOn ? "Desativar no site" : "Reativar no site"}</button>`;
+      if (g === "estudio") return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">O Estúdio (Ambiente, Bancada e Estrutura) ${statusBadge}</h3><div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-edit-estudio>${IC.edit} Editar textos do Estúdio</button>${toggleBtn}</div></div>
         <p class="help" style="margin-top:0;margin-bottom:10px">Coloque aqui as fotos da bancada, iluminação, poltronas e espaço para as clientes conhecerem o ambiente:</p>
         <ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
-      if (g === "portfolio") return `<h3 class="group">Portfólio Geral</h3><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
-      return `<h3 class="group">${GROUPS[g].label}</h3>
+      if (g === "portfolio") return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">Portfólio Geral ${statusBadge}</h3>${toggleBtn}</div><ul class="albums">${list.map(a => item(a, false)).join("")}</ul>`;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">${GROUPS[g].label} ${statusBadge}</h3>${toggleBtn}</div>
         <ul class="albums" data-group="${g}">${list.map(a => item(a, true)).join("")}</ul>
         <button class="btn sm addalbum" data-add="${g}">${IC.plus} Nova categoria em ${GROUPS[g].label}</button>`;
-    }).join("")}`;
+    }).join("")}
+    ${customPageAlbums.length ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:22px;margin-bottom:8px"><h3 class="group" style="margin:0">Páginas Personalizadas no Topo do Site</h3><button type="button" class="btn sm gold" data-route-add>${IC.plus} Nova rota no topo</button></div>
+      <ul class="albums">${customPageAlbums.map(a => item(a, false)).join("")}</ul>` : ""}`;
 
   function bindQuickHero() {
     const box = $("#quickHeroBox");
@@ -360,7 +597,8 @@ async function viewAlbums() {
   }
   bindQuickHero();
 
-  content.onclick = e => {
+  content.onclick = async e => {
+    if (await handleRouteManagerClick(e, c, viewAlbums)) return;
     if (e.target.closest("[data-edit-estudio]")) return editEstudioTexts();
     const add = e.target.closest("[data-add]");
     if (add) return newAlbum(add.dataset.add);
@@ -438,6 +676,16 @@ async function newAlbum(group) {
 
 async function editAlbum(a) {
   if (a.group === "estudio") return editEstudioTexts();
+  if (a.group === "pagina") {
+    let c = loadedContent;
+    try { if (!c) c = await api.loadContent(); } catch (e) { c = DEFAULT_CONTENT; }
+    const list = Array.isArray(c.customRoutes) ? c.customRoutes : [];
+    const idx = list.findIndex(x => x && x.id === a.id);
+    if (idx >= 0) {
+      await openCustomRouteModal(list[idx], idx, c, () => renderAlbum(a));
+      return;
+    }
+  }
   const isPf = a.group === "portfolio";
   const r = await modal({
     title: "Editar categoria",
@@ -499,7 +747,7 @@ function renderAlbum(a) {
   st.sortables.forEach(s => s.destroy()); st.sortables = [];
   $("#selbar")?.remove(); st.selecting = false; st.sel.clear();
   const n = st.photos.length;
-  const siteUrl = a.group === "portfolio" ? "../#/portfolio" : (a.group === "estudio" ? "../#/estudio" : `../#/${a.group}/${encodeURIComponent(a.id)}`);
+  const siteUrl = a.group === "portfolio" ? "../#/portfolio" : (a.group === "estudio" ? "../#/estudio" : (a.group === "pagina" ? `../#/pagina/${encodeURIComponent(a.id)}` : `../#/${a.group}/${encodeURIComponent(a.id)}`));
   content.innerHTML = `
     <button class="backbtn" data-act="back">${IC.back} Todas as categorias</button>
     <div class="ahead">
@@ -1077,7 +1325,11 @@ async function viewTextos() {
       <h2 class="title" style="margin:0">Capa, Cores e Textos</h2>
       <button type="button" class="btn primary" id="topSaveBtn" data-save-all disabled>Salvar alterações</button>
     </div>
-    <p class="help">Altere a foto da capa principal (os textos sobre a capa são mantidos!), as cores do site ou qualquer texto do site e toque em <b>Salvar alterações</b>.</p>
+    <p class="help">Altere a foto da capa principal (os textos sobre a capa são mantidos!), ative/desative rotas do site, personalize as cores ou qualquer texto e toque em <b>Salvar alterações</b>.</p>
+    <details class="panel" open>
+      <summary>Menu do Topo e Rotas do Site (Ativar, Desativar ou Adicionar)</summary>
+      <div class="body" id="txtRoutesBody">${renderRoutesManagerHtml(c)}</div>
+    </details>
     <details class="panel" open>
       <summary>Foto da Capa Principal (Entrada) e Foto do “Sobre”</summary>
       <div class="body" id="mediaBody">${renderMediaFields()}</div>
@@ -1098,6 +1350,10 @@ async function viewTextos() {
   const form = $("#txtForm");
   form.addEventListener("input", () => markDirty());
   form.addEventListener("submit", e => e.preventDefault());
+  const trb = $("#txtRoutesBody");
+  if (trb) trb.onclick = e => handleRouteManagerClick(e, c, () => {
+    trb.innerHTML = renderRoutesManagerHtml(c);
+  });
   bindImgFields();
   bindColorFields();
   bindSaveAllBtns();
