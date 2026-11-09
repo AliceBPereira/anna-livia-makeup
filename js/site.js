@@ -1,4 +1,4 @@
-import { getContent, getMedia, listAlbums, listPhotos, getFullImage, thumbSrc, fetchCloudState } from "./public-api.js";
+import { getContent, getMedia, listAlbums, listPhotos, getFullImage, thumbSrc, fetchCloudState, rescueLegacyImagesFromCache } from "./public-api.js";
 import { DEFAULT_CONTENT, DEFAULT_ALBUMS, GROUPS, SITE_ROUTES } from "./defaults.js";
 
 const $ = s => document.querySelector(s);
@@ -504,8 +504,18 @@ async function refreshSite(force = false) {
 (async function boot() {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(CACHE) || "null"); } catch (e) { }
-  if (cached && cached.content) { S = cached; applyChrome(); route(); }
+  if (cached && cached.content) {
+    if (Array.isArray(cached.albums) && cached.albums.some(a => a.coverThumb || a.count > 0)) {
+      try { localStorage.setItem("alm-rescue-meta-v1", JSON.stringify(cached)); } catch (e) { }
+    }
+    S = cached; applyChrome(); route();
+  }
   await refreshSite(true);
+  rescueLegacyImagesFromCache().then(res => {
+    if (res && (res.rescuedPhotos > 0 || res.rescuedMedia > 0)) {
+      refreshSite(true);
+    }
+  });
 })();
 
 document.addEventListener("visibilitychange", () => {

@@ -352,6 +352,46 @@ async function uploadDataUrl(pathPrefix, dataUrl) {
   return blob.url;
 }
 
+async function getLegacyBlobCatalog() {
+  if (memCache._legacyCatalog && (Date.now() - memCache._legacyCatalog.ts < 60000)) {
+    return memCache._legacyCatalog.data;
+  }
+  try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return { photos: [], media: {}, etags: [] };
+    const { blobs } = await list({ limit: 250 });
+    const byId = new Map();
+    const media = {};
+    const etags = new Set();
+    for (const b of blobs || []) {
+      const cleanEtag = String(b.etag || "").replace(/"/g, "");
+      if (cleanEtag) etags.add(cleanEtag);
+      const m = /^photos\/([a-z0-9]+)-(thumb|full)-(\d+)-/.exec(b.pathname);
+      if (m) {
+        const [, id, kind, ts] = m;
+        if (!byId.has(id)) byId.set(id, { id, ts: Number(ts) });
+        const item = byId.get(id);
+        item[kind + "Url"] = b.url;
+        item[kind + "Etag"] = cleanEtag;
+      } else if (b.pathname.startsWith("site/hero-")) {
+        if (!media.hero || new Date(b.uploadedAt) > new Date(media.hero.uploadedAt)) {
+          media.hero = { url: b.url, etag: cleanEtag, uploadedAt: b.uploadedAt };
+        }
+      } else if (b.pathname.startsWith("site/about-")) {
+        if (!media.about || new Date(b.uploadedAt) > new Date(media.about.uploadedAt)) {
+          media.about = { url: b.url, etag: cleanEtag, uploadedAt: b.uploadedAt };
+        }
+      }
+    }
+    const photos = [...byId.values()].sort((a, b) => a.ts - b.ts);
+    const data = { photos, media, etags: [...etags] };
+    memCache._legacyCatalog = { data, ts: Date.now() };
+    return data;
+  } catch (e) {
+    console.warn("getLegacyBlobCatalog error:", e);
+    return { photos: [], media: {}, etags: [] };
+  }
+}
+
 function uid() {
   return crypto.randomBytes(6).toString("hex") + Date.now().toString(36).slice(-4);
 }
@@ -373,6 +413,16 @@ module.exports = async (req, res) => {
       if (q.action === "init") {
         const [st, ad] = await Promise.all([getState(), getAdmins()]);
         return res.status(200).json({ ...st, setupDone: !!ad.setupDone });
+      }
+      if (q.action === "legacyBlobs") {
+        const [st, cat] = await Promise.all([getState(), getLegacyBlobCatalog()]);
+        const existingIds = new Set((st.photos || []).map(p => p.id));
+        const missingPhotos = (cat.photos || []).filter(p => !existingIds.has(p.id));
+        return res.status(200).json({
+          missingPhotos,
+          legacyMedia: cat.media || {},
+          currentPhotosCount: (st.photos || []).length
+        });
       }
       const st = await getState();
       return res.status(200).json(st);
@@ -425,6 +475,64 @@ module.exports = async (req, res) => {
       if (u.active === false) return err(res, 403, "noaccess", "Este acesso foi desativado.");
       const token = signToken({ uid: u.uid, email: u.email });
       return res.status(200).json({ token, user: { uid: u.uid, name: u.name, email: u.email, owner: u.owner, active: u.active } });
+    }
+
+    if (action === "rescueLegacyItem") {
+      const cat = await getLegacyBlobCatalog();
+      const validEtags = new Set(cat.etags || []);
+      const st = await getState(true);
+      const md5OfDataUrl = d => {
+        const m = /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/.exec(d || "");
+        if (!m) return "";
+        return crypto.createHash("md5").update(Buffer.from(m[1], "base64")).digest("hex");
+      };
+      if (body.type === "media") {
+        const key = body.key;
+        if (!["hero", "about"].includes(key)) return err(res, 400, "invalid-key", "Chave inválida.");
+        const hash = md5OfDataUrl(body.dataUrl);
+        if (!hash || !validEtags.has(hash)) return err(res, 403, "invalid-etag", "Arquivo não corresponde ao backup original.");
+        st.media[key] = await uploadDataUrl(`site/${key}`, body.dataUrl);
+        st.updatedAt = Date.now();
+        await writeJsonBlob(STATE_PATH, st);
+        return res.status(200).json({ ok: true, url: st.media[key] });
+      }
+      if (body.type === "photo") {
+        const pid = String(body.id || "");
+        if (st.photos.some(p => p.id === pid)) return res.status(200).json({ ok: true, alreadyExists: true });
+        const tHash = md5OfDataUrl(body.thumb);
+        const fHash = md5OfDataUrl(body.full);
+        if ((!tHash || !validEtags.has(tHash)) && (!fHash || !validEtags.has(fHash))) {
+          return err(res, 403, "invalid-etag", "Foto não corresponde ao backup original.");
+        }
+        const thumbUrl = await uploadDataUrl(`photos/${pid}-thumb`, body.thumb || body.full);
+        const fullUrl = body.full && body.full !== body.thumb
+          ? await uploadDataUrl(`photos/${pid}-full`, body.full)
+          : thumbUrl;
+        const targetAlbumId = body.albumId || "portfolio";
+        const photo = {
+          id: pid,
+          albumId: targetAlbumId,
+          order: body.order ?? st.photos.length,
+          w: body.w || 800,
+          h: body.h || 1000,
+          thumbUrl,
+          fullUrl,
+          createdAt: body.ts || Date.now()
+        };
+        st.photos.push(photo);
+        const alb = st.albums.find(a => a.id === targetAlbumId);
+        if (alb) {
+          alb.count = st.photos.filter(p => p.albumId === alb.id).length;
+          if (alb.coverPhotoId !== "none" && !alb.coverThumb) {
+            alb.coverThumb = thumbUrl;
+            alb.coverPhotoId = photo.id;
+          }
+        }
+        st.updatedAt = Date.now();
+        await writeJsonBlob(STATE_PATH, st);
+        return res.status(200).json({ ok: true, photo });
+      }
+      return err(res, 400, "invalid-type", "Tipo inválido.");
     }
 
     // Demais ações exigem administrador autenticado

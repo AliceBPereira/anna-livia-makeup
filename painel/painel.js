@@ -1,6 +1,7 @@
 import { api, MODE, errMsg, blobToDataURL } from "./admin-api.js";
 import { CONTENT_FORM, GROUPS, THEME_COLORS, DEFAULT_CONTENT, SITE_ROUTES } from "../js/defaults.js";
 import { processPhoto, makeCover, processSiteImage, loadImage, compressCanvas } from "./image.js";
+import { rescueLegacyImagesFromCache } from "../js/public-api.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -677,7 +678,10 @@ async function viewAlbums() {
     <div class="panel" id="routesMgrBox" style="margin-bottom:24px">
       ${renderRoutesManagerHtml(c)}
     </div>
-    <h2 class="title">Fotos do Estúdio e Galerias</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+      <h2 class="title" style="margin:0">Fotos do Estúdio e Galerias</h2>
+      <button type="button" class="btn sm gold" id="rescueLegacyBtn" title="Tenta resgatar imagens do cache deste navegador ou do armazenamento anterior">${IC.rot} Resgatar imagens anteriores</button>
+    </div>
     <p class="help">Toque em <b>O Estúdio</b> ou em qualquer categoria abaixo para adicionar fotos, apagar, escolher a capa ou deixar sem capa.</p>
     ${GROUP_ORDER.map(g => {
       const list = st.albums.filter(a => a.group === g);
@@ -737,6 +741,24 @@ async function viewAlbums() {
     });
   }
   bindQuickHero();
+
+  const rescueBtn = $("#rescueLegacyBtn", content);
+  if (rescueBtn) {
+    rescueBtn.onclick = async () => {
+      await busy(rescueBtn, async () => {
+        toast("Verificando imagens salvas no cache deste aparelho...");
+        const res = await rescueLegacyImagesFromCache();
+        if (res.rescuedPhotos > 0 || res.rescuedMedia > 0) {
+          localStorage.removeItem("alm-cache-v1");
+          toast(`Resgatadas ${res.rescuedPhotos} foto(s) e ${res.rescuedMedia} capa(s)!`);
+          st.albums = [];
+          await viewAlbums(my);
+        } else {
+          toast("Nenhuma imagem antiga no cache deste navegador. Abra o painel no aparelho onde as fotos foram vistas ou desbloqueie o anna-livia-store na Vercel.", "bad");
+        }
+      });
+    };
+  }
 
   content.onclick = async e => {
     if (await handleRouteManagerClick(e, c, viewAlbums)) return;
@@ -1985,3 +2007,11 @@ function viewConta() {
 }
 
 boot();
+rescueLegacyImagesFromCache().then(res => {
+  if (res && (res.rescuedPhotos > 0 || res.rescuedMedia > 0)) {
+    localStorage.removeItem("alm-cache-v1");
+    toast(`Resgatadas automaticamente ${res.rescuedPhotos} foto(s)!`);
+    st.albums = [];
+    route();
+  }
+});

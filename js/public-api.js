@@ -123,3 +123,93 @@ export async function getFullImage(photo) {
 }
 
 export const thumbSrc = p => p.thumbUrl || p.thumb || "";
+
+function blobToDataUrl(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
+async function tryFetchCachedImage(url) {
+  if (!url) return null;
+  try {
+    const r = await fetch(url, { cache: "force-cache" });
+    if (!r.ok) return null;
+    const b = await r.blob();
+    if (!b || b.size < 100 || !String(b.type || "").startsWith("image/")) return null;
+    return await blobToDataUrl(b);
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function rescueLegacyImagesFromCache(onProgress) {
+  try {
+    const r = await fetch(`/api/store?action=legacyBlobs&t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return { rescuedPhotos: 0, rescuedMedia: 0, totalMissing: 0 };
+    const { missingPhotos = [], legacyMedia = {} } = await r.json();
+    let rescuedPhotos = 0;
+    let rescuedMedia = 0;
+
+    // 1. Tenta resgatar imagens de capa/sobre do cache do navegador
+    for (const key of ["hero", "about"]) {
+      const m = legacyMedia[key];
+      if (m && m.url) {
+        const dataUrl = await tryFetchCachedImage(m.url);
+        if (dataUrl) {
+          const sr = await fetch("/api/store", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "rescueLegacyItem", type: "media", key, dataUrl })
+          });
+          if (sr.ok) rescuedMedia++;
+        }
+      }
+    }
+
+    // 2. Descobre possíveis vínculos de álbum salvos no cache local do aparelho
+    let coverMap = {};
+    try {
+      const meta = JSON.parse(localStorage.getItem("alm-rescue-meta-v1") || localStorage.getItem("alm-cache-v1") || "null");
+      if (meta && Array.isArray(meta.albums)) {
+        meta.albums.forEach(a => {
+          if (a.coverPhotoId && a.coverPhotoId !== "none") coverMap[a.coverPhotoId] = a.id;
+        });
+      }
+    } catch (e) {}
+
+    // 3. Tenta resgatar cada foto do cache de 1 ano do navegador
+    for (let i = 0; i < missingPhotos.length; i++) {
+      const p = missingPhotos[i];
+      if (onProgress) onProgress({ index: i + 1, total: missingPhotos.length, rescuedPhotos });
+      const [thumbData, fullData] = await Promise.all([
+        tryFetchCachedImage(p.thumbUrl),
+        tryFetchCachedImage(p.fullUrl)
+      ]);
+      if (thumbData || fullData) {
+        const sr = await fetch("/api/store", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "rescueLegacyItem",
+            type: "photo",
+            id: p.id,
+            ts: p.ts,
+            order: i,
+            albumId: coverMap[p.id] || "portfolio",
+            thumb: thumbData || fullData,
+            full: fullData || thumbData
+          })
+        });
+        if (sr.ok) rescuedPhotos++;
+      }
+    }
+    return { rescuedPhotos, rescuedMedia, totalMissing: missingPhotos.length };
+  } catch (e) {
+    console.warn("rescueLegacyImagesFromCache:", e);
+    return { rescuedPhotos: 0, rescuedMedia: 0, totalMissing: 0 };
+  }
+}
